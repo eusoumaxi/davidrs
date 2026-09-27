@@ -29,8 +29,8 @@ src/
   event.rs         typed EventBridge input                event
   schedule.rs      typed scheduled input                  schedule
   aws.rs           SDK configuration                      aws
-  table.rs         DynamoDB outcomes, bounds, page tokens dynamo
-  events.rs        EventBridge publishing                 events
+  dynamo.rs        DynamoDB outcomes, bounds, page tokens dynamo
+  eventbridge.rs   EventBridge publishing                 eventbridge
   secrets.rs       Secrets Manager reads                  secrets
   client.rs        outbound HTTP with limits              client
   auth.rs          RS256 / JWKS verification              auth
@@ -40,6 +40,18 @@ src/
   telemetry.rs     logs, EMF metrics, X-Ray traces        logs, metrics, otel
   mcp.rs           MCP servers: protocol, tools, OpenAPI  mcp, mcp-openapi
   test_support.rs  synthetic invocations and requests     test-support
+  guide.rs         this guide, built from docs/*.md       documentation only
+```
+
+Around the crate, the repository keeps:
+
+```text
+docs/              the chapters of this guide; their examples run as doctests
+examples/          runnable programs, one for each trigger and main feature
+tests/             integration tests through the public API, one file per area
+skills/davidrs/    the agent skill for AI coding assistants (npx skills add)
+scripts/check.sh   every check CI runs, runnable locally
+.github/           CI, the release workflow, templates and Dependabot
 ```
 
 ## The invocation
@@ -103,7 +115,7 @@ Decoding and admission are the handler's here: a streamed endpoint often decides
 | Direct invocation | [`runtime::run`](crate::runtime::run) | any payload `T` | any response `U` |
 | Streamed, any payload | [`streaming::run`](crate::streaming::run) | any payload `T` | a head and a [`StreamBody`](crate::streaming::StreamBody) |
 
-All of them run the handler under the invocation deadline and open one tracing span per invocation.
+All of them run the handler under the invocation deadline and, with `logs`, open one tracing span per invocation. They decode the payload before the handler runs and report the handler's failures to Lambda as invocation errors; only the HTTP pipelines render failures themselves.
 
 ## Failures
 

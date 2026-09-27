@@ -6,9 +6,8 @@ ignore = []
 
 [licenses]
 version = 2
+# Permissive licences only, so every dependency can ship inside an MIT crate.
 allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "ISC", "Unicode-3.0", "Zlib", "CDLA-Permissive-2.0"]
-# This crate itself is not published yet, so its own licence is not checked.
-private = { ignore = true }
 include-dev = true
 
 [bans]

@@ -1,2 +1,3 @@
-# Standard-width Rust keeps signatures, error paths and startup code readable.
+# rustfmt's default width, written down so a contributor's global rustfmt
+# configuration cannot change how this repository is formatted.
 max_width = 100

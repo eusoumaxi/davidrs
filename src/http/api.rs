@@ -77,6 +77,7 @@ where
 {
     /// Configures an endpoint that admits every request and caps bodies at
     /// [`DEFAULT_BODY_LIMIT`]. Performs no I/O.
+    #[must_use]
     pub fn new(operation: &'static str, policy: P, renderer: R) -> Self {
         Self {
             operation,
@@ -96,6 +97,7 @@ where
     A: Admission,
 {
     /// Replaces the admission check that runs before the body is read.
+    #[must_use]
     pub fn admission<B: Admission>(self, admission: B) -> Api<P, R, B> {
         Api {
             operation: self.operation,
@@ -324,7 +326,7 @@ fn invocation_from(request: &lambda_http::Request) -> Invocation {
         || {
             Invocation::new(
                 String::new(),
-                Deadline::in_from_now(crate::runtime::MAX_FUNCTION_TIMEOUT),
+                Deadline::after(crate::runtime::MAX_FUNCTION_TIMEOUT),
             )
         },
         crate::runtime::invocation_from,

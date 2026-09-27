@@ -22,7 +22,7 @@ pub const MAX_ENTRIES: usize = 10;
 /// Where an event goes: its source and detail type.
 ///
 /// ```
-/// use davidrs::events::EventRoute;
+/// use davidrs::eventbridge::EventRoute;
 ///
 /// const ORDER_CREATED: EventRoute = EventRoute {
 ///     source: "example.orders",
@@ -84,7 +84,7 @@ impl PublishOutcome {
 
     /// The indexes of entries that were not accepted.
     #[must_use]
-    pub fn failed_indexes(&self) -> Vec<usize> {
+    pub fn failed_indices(&self) -> Vec<usize> {
         self.entries
             .iter()
             .enumerate()
@@ -108,7 +108,7 @@ impl PublishOutcome {
 ///
 /// ```no_run
 /// # async fn created(client: aws_sdk_eventbridge::Client, deadline: davidrs::Deadline) -> Result<(), davidrs::RuntimeError> {
-/// use davidrs::events::{self, EventRoute};
+/// use davidrs::eventbridge::{self, EventRoute};
 ///
 /// const ORDER_CREATED: EventRoute = EventRoute {
 ///     source: "example.orders",
@@ -116,7 +116,7 @@ impl PublishOutcome {
 /// };
 ///
 /// let detail = serde_json::json!({ "orderId": "order-1" });
-/// let outcome = events::publish(&client, "default", &ORDER_CREATED, &detail, deadline).await?;
+/// let outcome = eventbridge::publish(&client, "default", &ORDER_CREATED, &detail, deadline).await?;
 /// if !outcome.all_accepted() {
 ///     return Err(davidrs::RuntimeError::message("order.created was not accepted"));
 /// }

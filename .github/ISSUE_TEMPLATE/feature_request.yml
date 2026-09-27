@@ -1,0 +1,21 @@
+name: Feature request
+description: A capability davidrs should have.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What a Lambda function needs to do, and why the current API makes it hard or easy to get wrong.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: The API you have in mind. The design rules in CONTRIBUTING.md apply — native types first, no router, additive features.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives
+      description: What you do today, with the official runtime crates or another library.

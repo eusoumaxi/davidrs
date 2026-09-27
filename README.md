@@ -1,5 +1,11 @@
 # davidrs
 
+[![crates.io](https://img.shields.io/crates/v/davidrs.svg)](https://crates.io/crates/davidrs)
+[![docs.rs](https://img.shields.io/docsrs/davidrs)](https://docs.rs/davidrs)
+[![CI](https://github.com/eusoumaxi/davidrs/actions/workflows/ci.yml/badge.svg)](https://github.com/eusoumaxi/davidrs/actions/workflows/ci.yml)
+[![MSRV](https://img.shields.io/crates/msrv/davidrs)](Cargo.toml)
+[![License: MIT](https://img.shields.io/crates/l/davidrs.svg)](LICENSE)
+
 A small, feature-gated framework for AWS Lambda functions in Rust.
 
 **[Guide and API reference →](https://eusoumaxi.github.io/davidrs/)**
@@ -7,7 +13,7 @@ A small, feature-gated framework for AWS Lambda functions in Rust.
 `davidrs` keeps the official `lambda_runtime` / `lambda_http` adapters and the AWS SDK as the transport, and owns what every function ends up writing around them — the part that is easy to get subtly wrong:
 
 - **One absolute deadline per invocation.** Child budgets can only shrink, retries do not get a fresh allowance, and every adapter keeps a margin for cleanup before Lambda's own timeout.
-- **One ordered pipeline per trigger.** HTTP (buffered and streamed), SQS, EventBridge, schedules and direct invocations run admission, decoding, authorization and the handler in a fixed order, and every failure — including the serialization of a success — reaches one renderer.
+- **One ordered pipeline per trigger.** HTTP requests, buffered or streamed, run admission, decoding, authorization and the handler in a fixed order, and every failure — including the serialization of a success — reaches one error renderer. SQS, EventBridge, schedules and direct invocations decode their payload before the handler and report its failures to Lambda.
 - **Failures that cannot leak.** A failure keeps its public message and its internal detail apart, and every 5xx renders a fixed message however it was built.
 - **Bounded work everywhere.** Request bodies, upstream responses, decompressed payloads, paginated reads, retries and stream producers all have explicit limits, and say when they hit one.
 - **Honest partial outcomes.** SQS batches report failures per record; `PutEvents`, `BatchWriteItem` and `BatchGetItem` per entry; a bounded read says whether it is complete.
@@ -75,7 +81,7 @@ Default features are empty; each capability links only what it names.
 | `event`, `schedule` | typed EventBridge and scheduled payloads |
 | `aws` | SDK configuration from the Lambda environment |
 | `dynamo` | bounded DynamoDB reads and batches, page tokens, spans |
-| `events` | EventBridge publishing with per-entry outcomes |
+| `eventbridge` | EventBridge publishing with per-entry outcomes |
 | `secrets` | typed Secrets Manager reads that never echo a value |
 | `client` | outbound HTTP with byte and time limits |
 | `auth` | RS256 / JWKS bearer-token verification |
@@ -87,23 +93,27 @@ Default features are empty; each capability links only what it names.
 
 ## Documentation
 
-The [guide](https://eusoumaxi.github.io/davidrs/davidrs/guide/index.html) explains why the crate exists, how each pipeline works and how to use every capability; its examples are compiled and run as tests. The `examples/` directory has one runnable program per trigger.
+The [guide](https://eusoumaxi.github.io/davidrs/davidrs/guide/index.html) explains why the crate exists, how each pipeline works and how to use every capability; its examples are compiled and run as tests. The `examples/` directory has a runnable program for each trigger and for the main features.
 
-## Development
+## Skill for AI coding agents
+
+The repository ships an [agent skill](https://github.com/vercel-labs/skills) that teaches coding agents (Claude Code, Cursor, Codex, Copilot and others) to write functions with `davidrs` the way the guide does:
 
 ```bash
-scripts/check.sh            # everything CI runs
-scripts/check.sh coverage   # line coverage
+npx skills add eusoumaxi/davidrs
 ```
 
-Rust 1.98.1 is pinned in `rust-toolchain.toml`. Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing code, and [SECURITY.md](SECURITY.md) before reporting a vulnerability.
+`skills/davidrs/SKILL.md` covers every function: features, `main`, handlers, deadlines, tests and Cargo Lambda. The agent reads the reference it needs from `skills/davidrs/references/`: HTTP endpoints, event consumers, AWS services and MCP servers.
+
+## Contributing
+
+Contributions are welcome, including AI-assisted ones. [CONTRIBUTING.md](CONTRIBUTING.md) explains the design rules and the branch, commit and pull request conventions; [SECURITY.md](SECURITY.md) explains how to report a vulnerability privately. Every change is recorded in [CHANGELOG.md](CHANGELOG.md).
+
+```bash
+scripts/check.sh                      # everything CI runs
+git config core.hooksPath .githooks   # check branch names and commit messages locally
+```
 
 ## Licence
 
-Licensed under either of [Apache License, Version 2.0](LICENSE-APACHE) or
-[MIT license](LICENSE-MIT) at your option.
-
-Unless you explicitly state otherwise, any contribution intentionally
-submitted for inclusion in this crate by you, as defined in the Apache-2.0
-license, shall be dual licensed as above, without any additional terms or
-conditions.
+`davidrs` is created by David Lara and released under the [MIT licence](LICENSE): use it, change it and ship it, commercially or not, keeping the copyright notice.

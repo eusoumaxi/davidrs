@@ -26,9 +26,10 @@ pub struct Invocation {
     pub deadline: Deadline,
     /// When the adapter received this invocation.
     ///
-    /// A handler that waits for a client-supplied window measures it from
-    /// here: the window is a promise about the whole request, including the
-    /// admission and decoding that ran before the handler.
+    /// A handler that honours a client-supplied time limit, such as a long
+    /// poll's wait, measures it from here: the limit covers the whole
+    /// request, including the admission and decoding that ran before the
+    /// handler.
     pub started: Instant,
 }
 
@@ -42,7 +43,7 @@ impl Invocation {
     /// ```
     /// # use std::time::Duration;
     /// # use davidrs::{Deadline, Invocation};
-    /// let invocation = Invocation::new("r", Deadline::in_from_now(Duration::from_secs(1)))
+    /// let invocation = Invocation::new("r", Deadline::after(Duration::from_secs(1)))
     ///     .with_trace_id(Some("Root=1-abc;Parent=def;Sampled=1".to_owned()));
     /// assert_eq!(invocation.trace_root(), Some("1-abc"));
     /// ```
@@ -56,6 +57,7 @@ impl Invocation {
     }
 
     /// Invocation metadata with no trace header, ARN or tenant, received now.
+    #[must_use]
     pub fn new(request_id: impl Into<String>, deadline: Deadline) -> Self {
         Self {
             request_id: request_id.into(),
@@ -105,7 +107,7 @@ impl Invocation {
 /// use std::time::Duration;
 /// use davidrs::Deadline;
 ///
-/// let invocation = Deadline::in_from_now(Duration::from_secs(10));
+/// let invocation = Deadline::after(Duration::from_secs(10));
 /// let call = invocation.child(Duration::from_secs(60));
 /// assert!(call <= invocation);
 /// assert!(invocation.with_margin(Duration::from_secs(1)) < invocation);
@@ -118,7 +120,7 @@ pub struct Deadline {
 impl Deadline {
     /// A deadline `budget` from now.
     #[must_use]
-    pub fn in_from_now(budget: Duration) -> Self {
+    pub fn after(budget: Duration) -> Self {
         Self {
             at: Instant::now() + budget,
         }
@@ -144,7 +146,7 @@ impl Deadline {
 
     /// Whether the budget is gone.
     #[must_use]
-    pub fn expired(self) -> bool {
+    pub fn is_expired(self) -> bool {
         self.remaining().is_zero()
     }
 
@@ -190,6 +192,7 @@ pub struct Context<Scope> {
 
 impl<Scope> Context<Scope> {
     /// Pairs a scope with its invocation.
+    #[must_use]
     pub fn new(invocation: Invocation, scope: Scope) -> Self {
         Self { invocation, scope }
     }
@@ -232,7 +235,7 @@ impl Deadline {
         F: std::future::Future<Output = T>,
     {
         let started = Instant::now();
-        if self.expired() {
+        if self.is_expired() {
             return Err(crate::RuntimeError::DeadlineExceeded {
                 elapsed: Duration::ZERO,
             });

@@ -1,0 +1,7 @@
+# Spelling policy, checked by `scripts/check.sh spelling` (typos).
+
+[default.extend-words]
+# `caf\u{e9}` spells "café" with an escape in a test.
+caf = "caf"
+# The `flate2` crate.
+flate = "flate"

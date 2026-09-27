@@ -26,7 +26,7 @@
 //! request spends a rate-limit budget a signed-in one does not), which a
 //! stage before the policy could not express.
 //!
-//! # Example
+//! # Examples
 //!
 //! ```no_run
 //! use std::sync::Arc;
@@ -218,6 +218,10 @@ pub fn json(status: StatusCode, value: &Value) -> StreamResponse {
 /// [`EventWriter`], at most four frames ahead of the reader. Dropping the
 /// response (the client left) cancels it, and `deadline` bounds it even while
 /// a client keeps reading.
+///
+/// # Panics
+///
+/// Outside a Tokio runtime, as [`tokio::spawn`] does.
 pub fn events<F, Fut>(deadline: Deadline, produce: F) -> StreamResponse
 where
     F: FnOnce(EventWriter) -> Fut + Send + 'static,
@@ -439,9 +443,9 @@ impl StreamRequest {
 
     /// The invocation payload exactly as the platform delivered it.
     ///
-    /// For what the typed request re-derives differently — a Function URL's
-    /// own decoded `queryStringParameters`, where the typed request re-parses
-    /// the raw query string under WHATWG rules.
+    /// Use it for what the typed request derives differently, such as a
+    /// Function URL's own decoded `queryStringParameters`: the typed request
+    /// parses the raw query string again, under WHATWG rules.
     #[must_use]
     pub fn event(&self) -> &Value {
         &self.event
@@ -490,6 +494,7 @@ where
 {
     /// Configures an endpoint serving `GET`, without CORS, with a one-second
     /// margin. Performs no I/O.
+    #[must_use]
     pub fn new(operation: &'static str, policy: P, renderer: R) -> Self {
         Self {
             operation,

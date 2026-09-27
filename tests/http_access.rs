@@ -6,7 +6,7 @@ mod support;
 
 use std::sync::Arc;
 
-use davidrs::http::access::{Access, AccessErrors, Claims, Grant, Requirement, Tenancy};
+use davidrs::http::access::{Access, Claims, Grant, Refusals, Requirement, Tenancy};
 use davidrs::http::{
     codes, Api, ErrorDefinition, Failure, FailureKind, Json, PlainErrors, Policy, Request,
     StatusCode,
@@ -67,14 +67,11 @@ fn signed_in(claims: Value, headers: Value) -> lambda_http::Request {
 }
 
 fn alice() -> Value {
-    json!({ "sub": "alice", "tenants": "[acme globex]", "groups": "[admin]" })
+    json!({ "sub": "alice", "tenants": "[tenant-a tenant-b]", "groups": "[admin]" })
 }
 
 fn invocation() -> Invocation {
-    Invocation::new(
-        "r1",
-        Deadline::in_from_now(std::time::Duration::from_secs(5)),
-    )
+    Invocation::new("r1", Deadline::after(std::time::Duration::from_secs(5)))
 }
 
 async fn authorize<P: Policy>(
@@ -100,7 +97,7 @@ async fn an_optional_caller_is_identified_from_http_api_jwt_claims() {
         .expect("grant");
     let caller = grant.caller().as_ref().expect("a caller");
     assert_eq!(caller.id, "alice");
-    assert_eq!(caller.tenants, ["acme", "globex"]);
+    assert_eq!(caller.tenants, ["tenant-a", "tenant-b"]);
     assert!(caller.admin);
     assert_eq!(grant.tenant(), &());
 }
@@ -179,14 +176,14 @@ async fn gateway_claims_can_be_ignored() {
 #[tokio::test]
 async fn a_lambda_authorizer_context_is_read_as_claims() {
     let request = http_api(
-        Some(json!({ "lambda": { "sub": "bob", "tenants": ["acme"] } })),
+        Some(json!({ "lambda": { "sub": "bob", "tenants": ["tenant-a"] } })),
         json!({}),
     );
     let grant = authorize(&Access::new(user).require_caller(), &request)
         .await
         .expect("grant");
     assert_eq!(grant.caller().id, "bob");
-    assert_eq!(grant.caller().tenants, ["acme"]);
+    assert_eq!(grant.caller().tenants, ["tenant-a"]);
 }
 
 #[tokio::test]
@@ -196,13 +193,13 @@ async fn a_member_selects_a_tenant_with_the_header() {
         .tenancy(Tenancy::header("x-tenant-id", member));
     let grant = authorize(
         &policy,
-        &signed_in(alice(), json!({ "x-tenant-id": " globex " })),
+        &signed_in(alice(), json!({ "x-tenant-id": " tenant-b " })),
     )
     .await
     .expect("grant");
     assert_eq!(
         grant.tenant().as_deref(),
-        Some("globex"),
+        Some("tenant-b"),
         "the header is trimmed"
     );
 }
@@ -213,7 +210,7 @@ async fn a_caller_outside_the_requested_tenant_is_refused_with_403() {
     let failure = refused(
         authorize(
             &policy,
-            &signed_in(alice(), json!({ "x-tenant-id": "initech" })),
+            &signed_in(alice(), json!({ "x-tenant-id": "tenant-c" })),
         )
         .await,
     );
@@ -225,8 +222,13 @@ async fn a_caller_outside_the_requested_tenant_is_refused_with_403() {
 #[tokio::test]
 async fn an_anonymous_request_that_names_a_tenant_is_refused() {
     let policy = Access::new(user).tenancy(Tenancy::header("x-tenant-id", member));
-    let failure =
-        refused(authorize(&policy, &http_api(None, json!({ "x-tenant-id": "acme" }))).await);
+    let failure = refused(
+        authorize(
+            &policy,
+            &http_api(None, json!({ "x-tenant-id": "tenant-a" })),
+        )
+        .await,
+    );
     assert_eq!(failure.status(), StatusCode::FORBIDDEN);
     assert_eq!(failure.code(), codes::FORBIDDEN);
 }
@@ -235,15 +237,18 @@ async fn an_anonymous_request_that_names_a_tenant_is_refused() {
 #[tokio::test]
 async fn a_public_tenancy_lets_an_anonymous_caller_name_a_tenant_as_context() {
     let policy = Access::new(user).tenancy(Tenancy::header("x-tenant-id", member).public());
-    let grant = authorize(&policy, &http_api(None, json!({ "x-tenant-id": "acme" })))
-        .await
-        .expect("grant");
+    let grant = authorize(
+        &policy,
+        &http_api(None, json!({ "x-tenant-id": "tenant-a" })),
+    )
+    .await
+    .expect("grant");
     assert!(grant.caller().is_none());
-    assert_eq!(grant.tenant().as_deref(), Some("acme"));
+    assert_eq!(grant.tenant().as_deref(), Some("tenant-a"));
     let outsider = refused(
         authorize(
             &policy,
-            &signed_in(alice(), json!({ "x-tenant-id": "initech" })),
+            &signed_in(alice(), json!({ "x-tenant-id": "tenant-c" })),
         )
         .await,
     );
@@ -258,14 +263,17 @@ async fn a_public_tenancy_lets_an_anonymous_caller_name_a_tenant_as_context() {
 async fn without_a_header_the_fallback_names_the_callers_tenant() {
     let only = |user: &User| (user.tenants.len() == 1).then(|| user.tenants[0].clone());
     let policy = Access::new(user).tenancy(Tenancy::header("x-tenant-id", member).or_else(only));
-    let single = signed_in(json!({ "sub": "carol", "tenants": "[acme]" }), json!({}));
+    let single = signed_in(
+        json!({ "sub": "carol", "tenants": "[tenant-a]" }),
+        json!({}),
+    );
     assert_eq!(
         authorize(&policy, &single)
             .await
             .expect("grant")
             .tenant()
             .as_deref(),
-        Some("acme")
+        Some("tenant-a")
     );
     let several = signed_in(alice(), json!({ "x-tenant-id": "   " }));
     assert_eq!(
@@ -304,34 +312,39 @@ async fn a_required_tenant_is_refused_with_400_when_none_is_selected() {
     assert_eq!(failure.code(), codes::TENANT_REQUIRED);
     let grant: Grant<Option<User>, String> = authorize(
         &policy,
-        &signed_in(alice(), json!({ "x-tenant-id": "acme" })),
+        &signed_in(alice(), json!({ "x-tenant-id": "tenant-a" })),
     )
     .await
     .expect("grant");
-    assert_eq!(grant.tenant(), "acme");
+    assert_eq!(grant.tenant(), "tenant-a");
 }
 
 #[tokio::test]
 async fn a_permission_rule_sees_the_caller_and_tenant_and_refuses_with_403() {
     let policy = Access::new(user)
         .tenancy(Tenancy::header("x-tenant-id", member).public())
-        .permit(|user, tenant| user.is_some_and(|user| user.admin) && tenant == Some("acme"));
+        .permit(|user, tenant| user.is_some_and(|user| user.admin) && tenant == Some("tenant-a"));
     assert!(authorize(
         &policy,
-        &signed_in(alice(), json!({ "x-tenant-id": "acme" }))
+        &signed_in(alice(), json!({ "x-tenant-id": "tenant-a" }))
     )
     .await
     .is_ok());
     let wrong_tenant = refused(
         authorize(
             &policy,
-            &signed_in(alice(), json!({ "x-tenant-id": "globex" })),
+            &signed_in(alice(), json!({ "x-tenant-id": "tenant-b" })),
         )
         .await,
     );
     assert_eq!(wrong_tenant.code(), codes::FORBIDDEN);
-    let anonymous =
-        refused(authorize(&policy, &http_api(None, json!({ "x-tenant-id": "acme" }))).await);
+    let anonymous = refused(
+        authorize(
+            &policy,
+            &http_api(None, json!({ "x-tenant-id": "tenant-a" })),
+        )
+        .await,
+    );
     assert_eq!(
         anonymous.status(),
         StatusCode::FORBIDDEN,
@@ -351,7 +364,7 @@ async fn the_order_of_checks_decides_which_refusal_wins() {
     let anonymous = refused(
         authorize(
             &strict,
-            &http_api(None, json!({ "x-tenant-id": "initech" })),
+            &http_api(None, json!({ "x-tenant-id": "tenant-c" })),
         )
         .await,
     );
@@ -363,7 +376,7 @@ async fn the_order_of_checks_decides_which_refusal_wins() {
     let outsider = refused(
         authorize(
             &strict,
-            &signed_in(alice(), json!({ "x-tenant-id": "initech" })),
+            &signed_in(alice(), json!({ "x-tenant-id": "tenant-c" })),
         )
         .await,
     );
@@ -381,7 +394,7 @@ async fn the_order_of_checks_decides_which_refusal_wins() {
     let denied = refused(
         authorize(
             &strict,
-            &signed_in(alice(), json!({ "x-tenant-id": "acme" })),
+            &signed_in(alice(), json!({ "x-tenant-id": "tenant-a" })),
         )
         .await,
     );
@@ -390,17 +403,17 @@ async fn the_order_of_checks_decides_which_refusal_wins() {
 
 #[tokio::test]
 async fn an_application_keeps_its_own_refusal_codes() {
-    let errors = AccessErrors {
+    let errors = Refusals {
         unauthenticated: ErrorDefinition::new(
             "ERROR_SIGN_IN",
             StatusCode::UNAUTHORIZED,
             "Please sign in",
         ),
-        ..AccessErrors::default()
+        ..Refusals::default()
     };
     let failure = refused(
         authorize(
-            &Access::new(user).require_caller().errors(errors),
+            &Access::new(user).require_caller().refusals(errors),
             &http_api(None, json!({})),
         )
         .await,
@@ -413,7 +426,7 @@ async fn an_application_keeps_its_own_refusal_codes() {
 
 #[test]
 fn the_default_refusals_use_the_crate_codes() {
-    let errors = AccessErrors::default();
+    let errors = Refusals::default();
     assert_eq!(
         [
             errors.invalid_token,
@@ -475,13 +488,13 @@ fn a_requirement_states_whether_a_missing_value_is_refused() {
         ],
         [true, false, false]
     );
-    assert_eq!(<String as Requirement<String>>::fulfil(None), None);
+    assert_eq!(<String as Requirement<String>>::fulfill(None), None);
     assert_eq!(
-        <Option<String> as Requirement<String>>::fulfil(None),
+        <Option<String> as Requirement<String>>::fulfill(None),
         Some(None)
     );
     assert_eq!(
-        <() as Requirement<String>>::fulfil(Some("acme".to_owned())),
+        <() as Requirement<String>>::fulfill(Some("tenant-a".to_owned())),
         Some(())
     );
 }
@@ -537,9 +550,120 @@ fn debug_output_shows_the_configuration_and_no_closures() {
     );
     let text = format!("{policy:?}");
     assert!(text.contains("gateway_claims: true"), "{text}");
+    assert!(text.contains("gateway_token_claims: false"), "{text}");
     assert!(text.contains("x-tenant-id"), "{text}");
     assert!(text.contains("fallback: true"), "{text}");
     assert!(text.contains("public: true"), "{text}");
+}
+
+/// The issuer of the tokens an authorizer verified in these tests.
+const GATEWAY_ISSUER: &str = "https://id.example.com";
+
+/// A JWT as the authorizer received it. The signature is never read here.
+fn jwt(claims: &Value) -> String {
+    use base64::Engine as _;
+    let b64 = base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    format!(
+        "{}.{}.c2ln",
+        b64.encode(r#"{"alg":"RS256","kid":"k1"}"#),
+        b64.encode(claims.to_string())
+    )
+}
+
+/// An `Authorization` header carrying `claims` as a bearer token.
+fn bearer(claims: &Value) -> Value {
+    json!({ "authorization": format!("Bearer {}", jwt(claims)) })
+}
+
+/// Claims whose realm roles are nested in an object, as Keycloak writes them.
+fn nested() -> Value {
+    json!({
+        "iss": GATEWAY_ISSUER,
+        "sub": "alice",
+        "exp": 4_102_444_800_u64,
+        "realm_access": { "roles": ["admin"] }
+    })
+}
+
+/// What an HTTP API JWT authorizer passes on for [`nested`]: strings only.
+fn flattened() -> Value {
+    json!({
+        "iss": GATEWAY_ISSUER,
+        "sub": "alice",
+        "exp": "4102444800",
+        "realm_access": "map[roles:[admin]]"
+    })
+}
+
+#[test]
+fn a_gateway_verified_token_keeps_the_json_types_of_its_claims() {
+    let request = signed_in(flattened(), bearer(&nested()));
+    let claims = Claims::from_gateway_token(&Request::new(&request)).expect("claims");
+    assert_eq!(
+        claims.get("realm_access"),
+        Some(&json!({ "roles": ["admin"] }))
+    );
+    assert_eq!(claims.get("exp"), Some(&json!(4_102_444_800_u64)));
+}
+
+/// A token is read only where an authorizer ran and only when it is the
+/// token the authorizer verified: no authorizer, another subject, another
+/// issuer, gateway claims without an issuer, a value that is not a JWT, an
+/// oversized token and a missing header all read as `None`.
+#[test]
+fn a_bearer_token_is_read_only_when_it_matches_the_gateway_claims() {
+    let mut other_subject = nested();
+    other_subject["sub"] = json!("mallory");
+    let mut other_issuer = nested();
+    other_issuer["iss"] = json!("https://id.example.org");
+    let mut oversized = nested();
+    oversized["padding"] = json!("x".repeat(9 * 1024));
+    for request in [
+        http_api(None, bearer(&nested())),
+        signed_in(flattened(), bearer(&other_subject)),
+        signed_in(flattened(), bearer(&other_issuer)),
+        signed_in(json!({ "sub": "alice" }), bearer(&nested())),
+        signed_in(flattened(), json!({ "authorization": "Bearer not-a-jwt" })),
+        signed_in(flattened(), bearer(&oversized)),
+        signed_in(flattened(), json!({})),
+    ] {
+        assert_eq!(Claims::from_gateway_token(&Request::new(&request)), None);
+    }
+}
+
+#[tokio::test]
+async fn gateway_token_claims_give_the_policy_nested_claims() {
+    let admin = |claims: &Claims| {
+        let roles = claims
+            .get("realm_access")?
+            .get("roles")?
+            .as_array()?
+            .clone();
+        Some(roles.contains(&json!("admin")))
+    };
+    let request = signed_in(flattened(), bearer(&nested()));
+    let flat = authorize(&Access::new(admin), &request)
+        .await
+        .expect("grant");
+    assert_eq!(flat.caller(), &None);
+    let structured = authorize(&Access::new(admin).gateway_token_claims(true), &request)
+        .await
+        .expect("grant");
+    assert_eq!(structured.caller(), &Some(true));
+}
+
+/// A request whose token cannot be read falls back to the authorizer's own
+/// claims.
+#[tokio::test]
+async fn gateway_token_claims_fall_back_to_the_authorizer_claims() {
+    let request = signed_in(alice(), json!({}));
+    let grant = authorize(&Access::new(user).gateway_token_claims(true), &request)
+        .await
+        .expect("grant");
+    assert_eq!(
+        grant.caller().as_ref().map(|user| user.id.as_str()),
+        Some("alice")
+    );
 }
 
 /// A REST API event whose authorizer attached these fields.
@@ -581,7 +705,7 @@ async fn a_rest_api_cognito_authorizer_provides_its_claims() {
 #[cfg(feature = "apigw-rest")]
 #[tokio::test]
 async fn a_rest_api_lambda_authorizer_context_is_read_as_claims() {
-    let request = rest_api(json!({ "principalId": "erin", "sub": "erin", "tenants": "acme" }));
+    let request = rest_api(json!({ "principalId": "erin", "sub": "erin", "tenants": "tenant-a" }));
     let grant = authorize(&Access::new(user).require_caller(), &request)
         .await
         .expect("grant");
@@ -590,7 +714,7 @@ async fn a_rest_api_lambda_authorizer_context_is_read_as_claims() {
             grant.caller().id.as_str(),
             grant.caller().tenants.as_slice()
         ),
-        ("erin", &["acme".to_owned()][..])
+        ("erin", &["tenant-a".to_owned()][..])
     );
 }
 

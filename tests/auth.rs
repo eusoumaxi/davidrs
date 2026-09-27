@@ -74,8 +74,8 @@ fn a_new_config_allows_a_minute_of_leeway_and_one_refresh_a_minute() {
 fn the_builder_methods_set_audiences_required_claims_and_the_refresh_interval() {
     let config = VerifierConfig::new(ISSUER, "https://id.example.com/jwks")
         .with_audiences(vec!["web".to_owned()])
-        .requiring("token_use", "id")
-        .requiring("scope", "orders")
+        .with_required_claim("token_use", "id")
+        .with_required_claim("scope", "orders")
         .with_min_refresh_interval(Duration::from_secs(5));
     assert_eq!(config.audiences, ["web"]);
     assert_eq!(
@@ -240,7 +240,7 @@ async fn a_valid_token_yields_its_claims() {
 }
 
 #[tokio::test]
-async fn an_expiry_no_system_time_can_hold_reads_as_none() {
+async fn an_expiry_beyond_system_time_reads_as_none() {
     let jwks = Jwks::serving(vec![jwk("k1")]).await;
     let token = token(&rs256("k1"), &claims_with("exp", json!(1e300)));
     let claims = jwks.verifier().await.verify(&token).await.expect("valid");
@@ -248,7 +248,7 @@ async fn an_expiry_no_system_time_can_hold_reads_as_none() {
 }
 
 #[tokio::test]
-async fn verified_claims_treat_null_as_absent_and_type_their_accessors() {
+async fn verified_claims_treat_null_as_absent_and_their_accessors_check_the_type() {
     let jwks = Jwks::serving(vec![jwk("k1")]).await;
     let mut body = claims_with("sub", json!(42));
     body["nickname"] = Value::Null;
@@ -396,7 +396,7 @@ async fn alg_none_is_refused() {
 }
 
 /// A token that names HS256 is refused before its signature is looked at,
-/// which is what stops HMAC signed with the public key.
+/// which stops a forgery that uses the public key as an HMAC secret.
 #[tokio::test]
 async fn alg_hs256_is_refused() {
     let jwks = Jwks::serving(vec![jwk("k1")]).await;
@@ -652,7 +652,10 @@ fn every_verify_error_reads_as_a_short_sentence() {
 async fn a_config_without_audiences_refuses_every_token() {
     let jwks = Jwks::serving(vec![jwk("k1")]).await;
     let verifier = jwks
-        .load(VerifierConfig::new(ISSUER, jwks.server.url("/jwks")).requiring("token_use", "id"))
+        .load(
+            VerifierConfig::new(ISSUER, jwks.server.url("/jwks"))
+                .with_required_claim("token_use", "id"),
+        )
         .await;
     assert_eq!(refused(&verifier, &valid("k1")).await, VerifyError::Claims);
 }

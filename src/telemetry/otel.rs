@@ -2,8 +2,8 @@
 //!
 //! Each finished span leaves as one UDP datagram to the agent at
 //! `AWS_XRAY_DAEMON_ADDRESS`, which forwards it to X-Ray outside the
-//! invocation, the transport the AWS Distro for OpenTelemetry Lambda layers
-//! use. A datagram is a JSON header line, the `T1S` prefix for sampled
+//! invocation. This is the transport the AWS Distro for OpenTelemetry Lambda
+//! layers use. A datagram is a JSON header line, the `T1S` prefix for sampled
 //! traces, then base64 of an OTLP `ExportTraceServiceRequest`.
 //!
 //! A local datagram costs microseconds per span. Exporting OTLP over HTTPS

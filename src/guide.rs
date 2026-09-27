@@ -35,7 +35,7 @@
 //! | [`queues`] | `queue`, `queue-visibility` | SQS partial batches and visibility |
 //! | [`aws_config`] | `aws` | SDK configuration from the Lambda environment |
 //! | [`dynamodb`] | `dynamo` | bounded reads, batches, page tokens, spans |
-//! | [`eventbridge`] | `events` | publishing with per-entry outcomes |
+//! | [`eventbridge`] | `eventbridge` | publishing with per-entry outcomes |
 //! | [`secrets`] | `secrets` | reading secrets without echoing them |
 //! | [`outbound_http`] | `client` | calling other services with byte and time limits |
 //! | [`tokens`] | `auth` | RS256 / JWKS bearer-token verification |
@@ -107,7 +107,7 @@ pub mod aws_config {}
 #[doc = include_str!("../docs/dynamodb.md")]
 pub mod dynamodb {}
 
-#[cfg(feature = "events")]
+#[cfg(feature = "eventbridge")]
 #[doc = include_str!("../docs/eventbridge.md")]
 pub mod eventbridge {}
 

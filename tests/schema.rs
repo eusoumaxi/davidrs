@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 /// The rendered message of what `issues` collected.
 fn message(issues: Issues) -> String {
     issues
-        .into_error("INVALID_REQUEST")
+        .into_result("INVALID_REQUEST")
         .expect_err("invalid")
         .public_message()
         .to_owned()
@@ -24,7 +24,7 @@ fn message(issues: Issues) -> String {
 fn nothing_recorded_is_ok() {
     let issues = Issues::new();
     assert!(issues.is_empty());
-    assert!(issues.into_error("INVALID_REQUEST").is_ok());
+    assert!(issues.into_result("INVALID_REQUEST").is_ok());
 }
 
 #[test]
@@ -40,7 +40,7 @@ fn every_issue_is_reported_in_one_400_not_only_the_first() {
         &mut issues,
     );
     assert!(!issues.is_empty());
-    let failure = issues.into_error("INVALID_REQUEST").expect_err("invalid");
+    let failure = issues.into_result("INVALID_REQUEST").expect_err("invalid");
     assert_eq!(failure.status(), StatusCode::BAD_REQUEST);
     assert_eq!(failure.code(), "INVALID_REQUEST");
     assert_eq!(failure.kind(), FailureKind::Decode);
@@ -136,7 +136,7 @@ fn a_well_shaped_value_is_returned() {
 }
 
 #[test]
-fn a_missing_value_is_required_and_an_explicit_null_is_a_type() {
+fn a_missing_value_is_required_and_an_explicit_null_is_a_type_error() {
     let mut issues = Issues::new();
     expect_string(None, "name", &mut issues);
     expect_string(Some(&Value::Null), "note", &mut issues);

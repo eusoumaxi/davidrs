@@ -1,4 +1,5 @@
-//! Every `run` entry point, driven through one real invocation.
+//! Every `run` entry point except the MCP server's (see `mcp_loop.rs`),
+//! driven through one real invocation.
 //!
 //! `RuntimeApi` plays the Lambda Runtime API on a local port. It answers the
 //! first `GET /2018-06-01/runtime/invocation/next` with one event and the
@@ -405,8 +406,8 @@ mod schedule {
         assert_eq!(*seen.lock().expect("lock"), [7]);
     }
 
-    /// The reason the adapter exists: a payload that stopped matching its
-    /// type fails loudly, and the handler never runs.
+    /// A payload that does not match its type fails the invocation, and the
+    /// handler never runs.
     #[tokio::test]
     async fn a_payload_that_does_not_match_the_type_is_posted_as_an_error() {
         let seen = Arc::new(Seen::new(Vec::new()));

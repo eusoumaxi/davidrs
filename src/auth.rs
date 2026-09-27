@@ -44,7 +44,7 @@ pub struct VerifierConfig {
     pub any_audience: bool,
     /// Claims that must equal an exact string, e.g. `("token_use", "id")`.
     pub required_claims: Vec<(String, String)>,
-    /// Clock skew allowed when checking `exp`.
+    /// Clock skew allowed when checking `exp` and `nbf`.
     pub leeway: Duration,
     /// Shortest interval between two successful JWKS refreshes.
     ///
@@ -97,7 +97,11 @@ impl VerifierConfig {
 
     /// Requires a claim to equal an exact value.
     #[must_use]
-    pub fn requiring(mut self, claim: impl Into<String>, value: impl Into<String>) -> Self {
+    pub fn with_required_claim(
+        mut self,
+        claim: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Self {
         self.required_claims.push((claim.into(), value.into()));
         self
     }
@@ -253,8 +257,8 @@ impl Verifier {
 
 /// The token in an `Authorization` header value.
 ///
-/// Strips the `Bearer` scheme when there is one — in any case, as RFC 6750
-/// allows — and the surrounding whitespace.
+/// Strips a `Bearer` scheme, matched case-insensitively as RFC 6750 allows,
+/// and the surrounding whitespace.
 ///
 /// # Examples
 ///

@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Weekly, so a new RustSec advisory fails the dependency policy even when
+  # nothing was pushed.
+  schedule:
+    - cron: "0 6 * * 1"
+  # The release workflow runs the same checks before it publishes.
+  workflow_call:
 
 permissions:
   contents: read
@@ -17,13 +23,18 @@ env:
 
 jobs:
   lint:
-    name: Rules, format, clippy, docs, package
+    name: Rules, format, clippy, spelling, workflows, docs, package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+        with:
+          tool: typos,actionlint
       - run: scripts/check.sh rules
       - run: scripts/check.sh lint
+      - run: scripts/check.sh spelling
+      - run: scripts/check.sh workflows
       - run: scripts/check.sh docs
       - run: scripts/check.sh package
 
@@ -31,8 +42,8 @@ jobs:
     name: Tests, all features
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: scripts/check.sh test
 
   list-features:
@@ -41,7 +52,7 @@ jobs:
     outputs:
       features: ${{ steps.list.outputs.features }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: list
         run: echo "features=$(scripts/check.sh list-features | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
 
@@ -54,8 +65,8 @@ jobs:
       matrix:
         feature: ${{ fromJSON(needs.list-features.outputs.features) }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: ${{ matrix.feature }}
       - run: scripts/check.sh feature ${{ matrix.feature }}
@@ -64,10 +75,10 @@ jobs:
     name: Coverage
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: rustup component add llvm-tools-preview
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
           tool: cargo-llvm-cov
       - run: scripts/check.sh coverage
@@ -76,8 +87,8 @@ jobs:
     name: Dependency policy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: taiki-e/install-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
           tool: cargo-deny
       - run: scripts/check.sh deny

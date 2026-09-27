@@ -1,4 +1,4 @@
-//! The value types of the empty crate: [`Invocation`], [`Deadline`],
+//! The value types available with no feature enabled: [`Invocation`], [`Deadline`],
 //! [`Context`], [`RuntimeError`] and [`davidrs::error_chain`].
 //!
 //! The property that matters most is that a budget only ever shrinks: a child
@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 use davidrs::{error_chain, Context, Deadline, Invocation, RuntimeError};
 
 fn budget(duration: Duration) -> Deadline {
-    Deadline::in_from_now(duration)
+    Deadline::after(duration)
 }
 
 #[test]
@@ -66,15 +66,15 @@ fn a_deadline_counts_down_to_its_instant() {
     assert_eq!(deadline.instant(), at);
     assert!(deadline.remaining() <= Duration::from_secs(10));
     assert!(deadline.remaining() > Duration::from_secs(5));
-    assert!(!deadline.expired());
+    assert!(!deadline.is_expired());
 }
 
 #[test]
 fn an_expired_deadline_reports_zero_and_its_children_are_expired() {
     let past = Deadline::at(Instant::now() - Duration::from_secs(1));
-    assert!(past.expired());
+    assert!(past.is_expired());
     assert_eq!(past.remaining(), Duration::ZERO);
-    assert!(past.child(Duration::from_secs(60)).expired());
+    assert!(past.child(Duration::from_secs(60)).is_expired());
 }
 
 /// Each retry derives its budget from the same parent, so the parent alone

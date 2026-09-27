@@ -16,7 +16,7 @@ use futures_util::StreamExt as _;
 use tokio::sync::oneshot;
 
 fn a_minute() -> Deadline {
-    Deadline::in_from_now(Duration::from_secs(60))
+    Deadline::after(Duration::from_secs(60))
 }
 
 /// Sets its flag when dropped, which is how a test sees a future go away.
@@ -91,7 +91,7 @@ async fn dropping_the_body_tells_the_producer_to_stop() {
 }
 
 #[tokio::test]
-async fn a_producer_that_ignores_cancellation_is_dropped_after_the_grace() {
+async fn a_producer_that_ignores_cancellation_is_dropped_after_the_grace_period() {
     let dropped = Arc::new(AtomicBool::new(false));
     let flag = Arc::clone(&dropped);
     let mut body = StreamBody::spawn(1, a_minute(), |producer| async move {
@@ -108,7 +108,7 @@ async fn a_producer_that_ignores_cancellation_is_dropped_after_the_grace() {
 async fn an_expired_budget_ends_the_stream_even_while_someone_reads() {
     let body = StreamBody::spawn(
         4,
-        Deadline::in_from_now(Duration::from_millis(30)),
+        Deadline::after(Duration::from_millis(30)),
         |producer| async move {
             producer.send("x").await;
             while !producer.should_stop() {

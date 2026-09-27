@@ -138,7 +138,7 @@ use davidrs::Deadline;
 
 # #[tokio::main]
 # async fn main() {
-let deadline = Deadline::in_from_now(Duration::from_secs(5));
+let deadline = Deadline::after(Duration::from_secs(5));
 let response = stream::events(deadline, |events| async move {
     for n in 1..=2 {
         if events.send(sse_frame(None, Some("tick"), &n.to_string())).await.is_err() {
@@ -194,7 +194,7 @@ async fn fetch_page(page: u32) -> String {
 
 # #[tokio::main]
 # async fn main() {
-let deadline = Deadline::in_from_now(Duration::from_secs(5));
+let deadline = Deadline::after(Duration::from_secs(5));
 let mut body = StreamBody::spawn(4, deadline, |producer| async move {
     let mut page = 0;
     while !producer.should_stop() {
@@ -213,7 +213,7 @@ body.shutdown().await;
 # }
 ```
 
-`select!` on `cancelled()` abandons a slow upstream call as soon as the body goes away, instead of finishing it first. A Lambda that streams without the HTTP pipeline returns a `StreamBody` from [`streaming::run`](crate::streaming::run).
+`select!` on `cancelled()` abandons a slow upstream call as soon as the body goes away, instead of finishing it first. A Lambda that streams without the HTTP pipeline returns a `lambda_runtime::MetadataPrelude` and a `StreamBody` from [`streaming::run`](crate::streaming::run); name the prelude through your own `lambda_runtime = "1"` dependency.
 
 ### Use cases
 

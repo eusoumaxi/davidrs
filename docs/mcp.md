@@ -27,7 +27,7 @@ A managed MCP gateway, such as Amazon Bedrock AgentCore Gateway, sits between th
 - **The authentication you already have.** The same Cognito pool, OAuth issuer or API keys your API trusts.
 - **Rust start-up.** No runtime to boot and a small binary: the cold start is the platform's, and a warm call's time is your API's.
 
-In production, the function this crate grew up with has been simpler to run and quicker to answer than the same tools behind a managed gateway. Reach for a gateway when you need what it adds, not by default.
+Reach for a gateway when you need what it adds, not by default.
 
 ### From zero to a connected client
 
@@ -137,7 +137,7 @@ let issuer = davidrs::required_env("COGNITO_ISSUER")?;
 let resource = davidrs::required_env("MCP_URL")?;
 let tokens = VerifierConfig::new(issuer.clone(), format!("{issuer}/.well-known/jwks.json"))
     .with_audiences(vec![resource.clone()])
-    .requiring("token_use", "access");
+    .with_required_claim("token_use", "access");
 let verifier = Arc::new(Verifier::load(client::build(Limits::default())?, tokens).await?);
 
 Server::new("orders", "1.0.0", Access::new(user).require_caller().verify_bearer(verifier))
@@ -388,7 +388,7 @@ MCP clients send plain HTTPS requests with a bearer token; they cannot sign requ
 
 **CloudFront in front of a Function URL whose auth type is `NONE`.** CloudFront gives the server a custom domain and AWS WAF — the web ACL on the distribution is the only firewall an MCP Function URL can have, and reserved concurrency on the function is its only brake (see the [security chapter](crate::guide::aws_security)); the Function URL invokes the function directly, and a call may run as long as CloudFront's origin response timeout allows (30 seconds by default, adjustable per origin). Origin access control does not fit: for a `POST` it needs the client to send the SHA-256 of the body in `x-amz-content-sha256`, which MCP clients do not do. The function therefore verifies the bearer itself on every request, as above, which is also what lets its `401` carry the metadata pointer. Configure the behaviour with every method allowed, caching disabled, and an origin request policy that forwards all viewer headers except `Host` (the managed `AllViewerExceptHostHeader`), so `Authorization`, `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` reach the function. The Function URL stays reachable without CloudFront, so a caller can skip what CloudFront adds, such as WAF rules; it cannot skip the token check.
 
-**API Gateway HTTP API with a JWT authorizer.** The gateway verifies the token — signature, issuer, audience, expiry and the route's scopes — before the function runs, so unauthenticated traffic costs no invocation, and `Access` reads the verified claims by default. For a web ACL, put CloudFront in front: a web ACL cannot attach to an HTTP API. Three things to know:
+**API Gateway HTTP API with a JWT authorizer.** The gateway verifies the token — signature, issuer, audience, expiry and the route's scopes — before the function runs, so unauthenticated traffic costs no invocation, and `Access` reads the verified claims by default: the function verifies nothing again and only maps the token's claims, as [tokens the gateway already verified](crate::guide::access#tokens-the-gateway-already-verified) shows for Cognito, Auth0, Okta, Entra ID, Keycloak and Clerk. For a web ACL, put CloudFront in front: a web ACL cannot attach to an HTTP API. Three things to know:
 
 - Each call must finish within the 30 seconds an HTTP API waits for its integration.
 - The gateway's own `401` does not name the resource metadata. A client that receives it falls back to probing `/.well-known/oauth-protected-resource` followed by the endpoint's path, then at the root: route both `GET` paths to the same function without the authorizer.
@@ -423,7 +423,7 @@ use davidrs::auth::VerifierConfig;
 let issuer = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_EXAMPLE";
 let config = VerifierConfig::new(issuer, format!("{issuer}/.well-known/jwks.json"))
     .with_audiences(vec!["https://mcp.example.com".to_owned()])
-    .requiring("token_use", "access");
+    .with_required_claim("token_use", "access");
 # let _ = config;
 ```
 

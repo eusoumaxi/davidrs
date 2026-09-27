@@ -2,7 +2,7 @@
 
 ## What it is
 
-[`http::schema`](crate::http::schema) checks the structure of a decoded JSON request and collects every problem in one [`Issues`](crate::http::schema::Issues) value. [`into_error`](crate::http::schema::Issues::into_error) is `Ok` when nothing was recorded, and otherwise one `400` whose message lists every issue as `path: message`, separated by `; `.
+[`http::schema`](crate::http::schema) checks the structure of a decoded JSON request and collects every problem in one [`Issues`](crate::http::schema::Issues) value. [`into_result`](crate::http::schema::Issues::into_result) is `Ok` when nothing was recorded, and otherwise one `400` whose message lists every issue as `path: message`, separated by `; `.
 
 ## Why it exists
 
@@ -34,7 +34,7 @@ if let Some(order) = schema::expect_object(Some(&body), "", &mut issues) {
     schema::expect_bool(order.get("gift"), "gift", &mut issues);
 }
 
-let failure = issues.into_error("INVALID_ORDER").expect_err("invalid");
+let failure = issues.into_result("INVALID_ORDER").expect_err("invalid");
 assert_eq!(failure.status().as_u16(), 400);
 assert_eq!(
     failure.public_message(),
@@ -75,7 +75,7 @@ fn check_period(period: &serde_json::Value, issues: &mut Issues) {
 
 let mut issues = Issues::new();
 check_period(&serde_json::json!({"from": "2026-03-04", "until": 7}), &mut issues);
-let message = issues.into_error("INVALID_PERIOD").unwrap_err().public_message().to_owned();
+let message = issues.into_result("INVALID_PERIOD").unwrap_err().public_message().to_owned();
 assert_eq!(message, "period.until: expected string, got number");
 ```
 

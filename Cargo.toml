@@ -1,17 +1,28 @@
 [package]
 name = "davidrs"
 version = "0.1.0"
+authors = ["David Lara <hi@eusoumaxi.com>"]
 edition = "2021"
 rust-version = "1.98.1"
-description = "A small, feature-gated framework for AWS Lambda services: one ordered pipeline per trigger, absolute invocation deadlines, bounded work and failures that cannot leak."
+description = "A small, feature-gated framework for AWS Lambda functions: one ordered pipeline per trigger, absolute invocation deadlines, bounded work and failures that cannot leak."
 repository = "https://github.com/eusoumaxi/davidrs"
 homepage = "https://eusoumaxi.github.io/davidrs/"
 documentation = "https://docs.rs/davidrs"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 keywords = ["lambda", "aws", "serverless", "http"]
 categories = ["web-programming", "asynchronous"]
 readme = "README.md"
-exclude = ["/.github", "/AGENTS.md", "/scripts", "/target"]
+# What crates.io receives: the code, the guide it compiles into the docs, the
+# examples and tests, and the files a user reads. Repository tooling stays out.
+include = [
+  "/src",
+  "/docs",
+  "/examples",
+  "/tests",
+  "/CHANGELOG.md",
+  "/LICENSE",
+  "/README.md",
+]
 
 [package.metadata.docs.rs]
 # docs.rs builds the reference and the guide with every capability.
@@ -31,6 +42,11 @@ bare_urls = "warn"
 
 [lints.clippy]
 all = "deny"
+# Documentation lints from the pedantic group. Product names such as DynamoDB
+# are listed in clippy.toml so they need no backticks.
+doc_markdown = "deny"
+missing_errors_doc = "deny"
+missing_panics_doc = "deny"
 
 [dependencies]
 # --- always on: the empty crate is value types only -------------------------
@@ -172,7 +188,15 @@ default = []
 _time = ["dep:tokio", "tokio/time"]
 
 runtime = ["_time", "dep:lambda_runtime", "dep:serde", "dep:serde_json"]
-http = ["runtime", "dep:lambda_http", "dep:serde_urlencoded", "dep:bytes"]
+# `base64` reads the payload of a bearer token an API Gateway authorizer
+# already verified (`Claims::from_gateway_token`).
+http = [
+  "runtime",
+  "dep:lambda_http",
+  "dep:serde_urlencoded",
+  "dep:bytes",
+  "dep:base64",
+]
 # Streamed HTTP responses (Function URL `RESPONSE_STREAM`, REST API `STREAM`):
 # JSON or server-sent events from one handler, with CORS and negotiation.
 http-stream = ["http", "streaming", "dep:http-body", "dep:http-body-util"]
@@ -231,7 +255,7 @@ dynamo = [
 ]
 compression = ["dep:flate2"]
 digest = ["dep:ring"]
-events = [
+eventbridge = [
   "_time",
   "aws",
   "dep:aws-sdk-eventbridge",
@@ -254,7 +278,6 @@ otel = [
   "dep:prost",
   "dep:tracing-opentelemetry",
   "dep:base64",
-  "lambda_runtime?/opentelemetry",
 ]
 test-support = ["dep:serde_json"]
 # An MCP server on the buffered pipeline, with hand-written tools. `base64`

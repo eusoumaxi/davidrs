@@ -19,7 +19,7 @@
 //! `Grant<Option<User>, ()>` on a public route without tenancy. Nothing has to
 //! be unwrapped, and only a policy can build a `Grant`.
 //!
-//! # Example
+//! # Examples
 //!
 //! ```
 //! use davidrs::http::access::{Access, Claims, Grant, Tenancy};
@@ -59,18 +59,20 @@
 //! The order decides which refusal a request with several problems receives,
 //! so it is fixed:
 //!
-//! 1. **Identify.** Gateway claims first; then, when a verifier is
-//!    configured, an `Authorization` bearer token. A token that is present but
+//! 1. **Identify.** Gateway claims first — with
+//!    [`Access::gateway_token_claims`], read from the bearer token the
+//!    authorizer verified — then, when a verifier is configured, an
+//!    `Authorization` bearer token. A token that is present but
 //!    does not verify, or whose claims do not describe a caller, is refused
-//!    with [`AccessErrors::invalid_token`].
-//! 2. **Require a caller**, when configured: [`AccessErrors::unauthenticated`].
+//!    with [`Refusals::invalid_token`].
+//! 2. **Require a caller**, when configured: [`Refusals::unauthenticated`].
 //! 3. **Select the tenant** from the header. A caller who is not a member of
-//!    the requested tenant is refused with [`AccessErrors::forbidden`], and so
+//!    the requested tenant is refused with [`Refusals::forbidden`], and so
 //!    is an anonymous request that names one, unless the tenancy is
 //!    [`public`](Tenancy::public). Without a header, the tenancy's default for
 //!    the caller applies.
-//! 4. **Require a tenant**, when configured: [`AccessErrors::tenant_required`].
-//! 5. **Permit**, when a rule is configured: [`AccessErrors::forbidden`].
+//! 4. **Require a tenant**, when configured: [`Refusals::tenant_required`].
+//! 5. **Permit**, when a rule is configured: [`Refusals::forbidden`].
 //!
 //! # Trust
 //!
@@ -81,9 +83,12 @@
 //! gateway claims off with [`Access::gateway_claims`] and verify tokens here.
 //!
 //! A tenant in a [`Grant`] is membership: a caller the policy checked belongs
-//! to it. The one exception is a [`public`](Tenancy::public) tenancy, where an
-//! anonymous request may name any tenant as context (a storefront, a public
-//! catalogue); a handler must not treat that tenant as membership.
+//! to it. There are two exceptions. In a [`public`](Tenancy::public)
+//! tenancy, an anonymous request may name any tenant as context (a
+//! storefront, a public catalogue); a handler must not treat that tenant as
+//! membership. And the tenant [`Tenancy::or_else`] derives for a caller who
+//! names none is not checked against membership: derive it from the
+//! caller's own tenants.
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -223,6 +228,79 @@ impl Claims {
     }
 }
 
+impl Claims {
+    /// The claims of the bearer token an API Gateway authorizer verified for
+    /// this request, with their JSON types intact.
+    ///
+    /// An HTTP API JWT authorizer hands the function every claim as a string:
+    /// an array becomes `"[a b]"`, and an object — Keycloak's `realm_access`,
+    /// an organization, a namespaced claim holding a map — becomes text that
+    /// is no longer JSON. The `Authorization` header still carries the token
+    /// the authorizer verified, so its payload can be read as it is, without
+    /// verifying the signature a second time.
+    ///
+    /// Returns `None` unless the request carries authorizer claims (see
+    /// [`Claims::from_gateway`]) with an `iss`, the header holds a bearer
+    /// token of at most 8 KiB, and every string claim the token and the
+    /// authorizer both carry is equal. A route without an authorizer, or a
+    /// token the authorizer did not check, is never read. The signature is
+    /// not checked here, so the module's trust notes apply exactly as they do
+    /// to gateway claims.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use davidrs::http::access::Claims;
+    /// use davidrs::http::Request;
+    ///
+    /// /// Keycloak nests realm roles in an object the authorizer flattens.
+    /// fn realm_roles(request: &Request<'_>) -> Vec<String> {
+    ///     Claims::from_gateway_token(request)
+    ///         .and_then(|claims| claims.get("realm_access")?.get("roles").cloned())
+    ///         .and_then(|roles| serde_json::from_value(roles).ok())
+    ///         .unwrap_or_default()
+    /// }
+    /// # let _ = realm_roles;
+    /// ```
+    #[must_use]
+    pub fn from_gateway_token(request: &Request<'_>) -> Option<Self> {
+        let gateway = Self::from_gateway(request)?;
+        let issuer = gateway.string("iss")?;
+        let token = request.header("authorization").and_then(bearer_token)?;
+        let claims = unverified_payload(token)?;
+        let agrees = claims.get("iss").and_then(Value::as_str) == Some(issuer)
+            && claims
+                .iter()
+                .all(|(name, value)| match (value, gateway.string(name)) {
+                    (Value::String(own), Some(verified)) => own == verified,
+                    _ => true,
+                });
+        agrees.then(|| Self::new(claims))
+    }
+}
+
+/// The largest bearer token read without verification, the same bound as
+/// `auth::MAX_TOKEN_BYTES` for a verified one.
+const MAX_GATEWAY_TOKEN_BYTES: usize = 8 * 1024;
+
+/// The payload of a compact JWT, decoded but not verified: only for a token
+/// an authorizer already verified.
+fn unverified_payload(token: &str) -> Option<Map<String, Value>> {
+    use base64::Engine as _;
+    if token.len() > MAX_GATEWAY_TOKEN_BYTES {
+        return None;
+    }
+    let mut parts = token.split('.');
+    let (_header, payload, _signature) = (parts.next()?, parts.next()?, parts.next()?);
+    if parts.next().is_some() {
+        return None;
+    }
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
 impl From<Map<String, Value>> for Claims {
     fn from(claims: Map<String, Value>) -> Self {
         Self(claims)
@@ -264,17 +342,17 @@ fn split_list(text: &str) -> Vec<String> {
 /// keeps the defaults of the rest:
 ///
 /// ```
-/// use davidrs::http::access::AccessErrors;
+/// use davidrs::http::access::Refusals;
 /// use davidrs::http::{ErrorDefinition, StatusCode};
 ///
-/// let errors = AccessErrors {
+/// let refusals = Refusals {
 ///     forbidden: ErrorDefinition::new("ERROR_NOT_YOURS", StatusCode::FORBIDDEN, "Not yours"),
-///     ..AccessErrors::default()
+///     ..Refusals::default()
 /// };
-/// assert_eq!(errors.forbidden.code, "ERROR_NOT_YOURS");
+/// assert_eq!(refusals.forbidden.code, "ERROR_NOT_YOURS");
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct AccessErrors {
+pub struct Refusals {
     /// A token was presented but is unusable. Default: `401`
     /// [`codes::INVALID_TOKEN`].
     pub invalid_token: ErrorDefinition,
@@ -289,7 +367,7 @@ pub struct AccessErrors {
     pub tenant_required: ErrorDefinition,
 }
 
-impl Default for AccessErrors {
+impl Default for Refusals {
     fn default() -> Self {
         Self {
             invalid_token: ErrorDefinition::new(
@@ -349,7 +427,7 @@ impl<C> Tenancy<C> {
     /// whose storefront or catalogue it browses.
     ///
     /// Without it, an anonymous request that names a tenant is refused with
-    /// [`AccessErrors::forbidden`], so a tenant in a grant always means a
+    /// [`Refusals::forbidden`], so a tenant in a grant always means a
     /// member asked for it. With it, a handler must tell the two cases apart
     /// by whether the grant has a caller.
     #[must_use]
@@ -360,6 +438,9 @@ impl<C> Tenancy<C> {
 
     /// The tenant of a caller who sends no header — for example the only
     /// tenant they belong to.
+    ///
+    /// The tenant it returns is not checked with the membership rule, so
+    /// choose it among the caller's own tenants.
     #[must_use]
     pub fn or_else(
         mut self,
@@ -419,7 +500,7 @@ impl<C> fmt::Debug for Tenancy<C> {
 /// impl Requirement<String> for Perhaps {
 ///     const REQUIRED: bool = false;
 ///
-///     fn fulfil(_found: Option<String>) -> Option<Self> {
+///     fn fulfill(_found: Option<String>) -> Option<Self> {
 ///         Some(Perhaps)
 ///     }
 /// }
@@ -429,13 +510,13 @@ pub trait Requirement<T>: sealed::Sealed<T> + Sized {
     const REQUIRED: bool;
 
     /// Converts what was found, or `None` when a required value is missing.
-    fn fulfil(found: Option<T>) -> Option<Self>;
+    fn fulfill(found: Option<T>) -> Option<Self>;
 }
 
 impl<T> Requirement<T> for Option<T> {
     const REQUIRED: bool = false;
 
-    fn fulfil(found: Option<T>) -> Option<Self> {
+    fn fulfill(found: Option<T>) -> Option<Self> {
         Some(found)
     }
 }
@@ -443,7 +524,7 @@ impl<T> Requirement<T> for Option<T> {
 impl<T> Requirement<T> for T {
     const REQUIRED: bool = true;
 
-    fn fulfil(found: Option<T>) -> Option<Self> {
+    fn fulfill(found: Option<T>) -> Option<Self> {
         found
     }
 }
@@ -451,7 +532,7 @@ impl<T> Requirement<T> for T {
 impl Requirement<String> for () {
     const REQUIRED: bool = false;
 
-    fn fulfil(_found: Option<String>) -> Option<Self> {
+    fn fulfill(_found: Option<String>) -> Option<Self> {
         Some(())
     }
 }
@@ -479,7 +560,7 @@ pub struct Grant<Who, Where> {
 }
 
 impl<Who, Where> Grant<Who, Where> {
-    /// The caller: `C`, `Option<C>`, as the route requires.
+    /// The caller: `C` or `Option<C>`, as the route requires.
     pub fn caller(&self) -> &Who {
         &self.caller
     }
@@ -507,11 +588,12 @@ type Permit<C> = Arc<dyn Fn(Option<&C>, Option<&str>) -> bool + Send + Sync>;
 pub struct Access<C, Who = Option<C>, Where = ()> {
     identify: Identify<C>,
     gateway: bool,
+    gateway_token: bool,
     #[cfg(feature = "auth")]
     verifier: Option<Arc<crate::auth::Verifier>>,
     tenancy: Option<Tenancy<C>>,
     permit: Option<Permit<C>>,
-    errors: AccessErrors,
+    refusals: Refusals,
     guarantees: PhantomData<fn() -> (Who, Where)>,
 }
 
@@ -526,11 +608,12 @@ impl<C> Access<C> {
         Self {
             identify: Arc::new(identify),
             gateway: true,
+            gateway_token: false,
             #[cfg(feature = "auth")]
             verifier: None,
             tenancy: None,
             permit: None,
-            errors: AccessErrors::default(),
+            refusals: Refusals::default(),
             guarantees: PhantomData,
         }
     }
@@ -545,11 +628,24 @@ impl<C, Who, Where> Access<C, Who, Where> {
         self
     }
 
+    /// Reads gateway claims from the bearer token the authorizer verified, with
+    /// their JSON types, instead of the authorizer's strings. Off by default.
+    ///
+    /// Turn it on when a claim is an object, such as Keycloak's
+    /// `realm_access`; see [`Claims::from_gateway_token`] for when the token
+    /// is read. A request whose token cannot be read that way is identified
+    /// from the authorizer's claims, as without this setting.
+    #[must_use]
+    pub fn gateway_token_claims(mut self, read: bool) -> Self {
+        self.gateway_token = read;
+        self
+    }
+
     /// Also identifies callers by an `Authorization` bearer token, verified
     /// with `verifier`.
     ///
     /// The header may be `Bearer <token>` or the bare token. A value with
-    /// another scheme (`Basic …`, a signed-link scheme) is not a caller token
+    /// another scheme (`Basic …`, a custom scheme) is not a caller token
     /// and leaves the request anonymous.
     #[cfg(feature = "auth")]
     #[must_use]
@@ -559,7 +655,7 @@ impl<C, Who, Where> Access<C, Who, Where> {
     }
 
     /// A permission rule over the caller and the selected tenant, checked
-    /// last. Returning `false` refuses with [`AccessErrors::forbidden`].
+    /// last. Returning `false` refuses with [`Refusals::forbidden`].
     ///
     /// The caller is an `Option` even on a route that requires one, so a rule
     /// states explicitly what an anonymous request may do.
@@ -574,8 +670,8 @@ impl<C, Who, Where> Access<C, Who, Where> {
 
     /// Replaces the refusals, for an application with its own codes.
     #[must_use]
-    pub fn errors(mut self, errors: AccessErrors) -> Self {
-        self.errors = errors;
+    pub fn refusals(mut self, refusals: Refusals) -> Self {
+        self.refusals = refusals;
         self
     }
 
@@ -584,11 +680,12 @@ impl<C, Who, Where> Access<C, Who, Where> {
         Access {
             identify: self.identify,
             gateway: self.gateway,
+            gateway_token: self.gateway_token,
             #[cfg(feature = "auth")]
             verifier: self.verifier,
             tenancy: self.tenancy,
             permit: self.permit,
-            errors: self.errors,
+            refusals: self.refusals,
             guarantees: PhantomData,
         }
     }
@@ -623,9 +720,12 @@ impl<C, Who, Where> Access<C, Who, Where> {
     /// Step 1: the caller, from gateway claims or a verified bearer token.
     async fn identify(&self, request: &Request<'_>) -> Result<Option<C>, Failure> {
         if self.gateway {
-            if let Some(caller) =
-                Claims::from_gateway(request).and_then(|claims| (self.identify)(&claims))
-            {
+            let claims = self
+                .gateway_token
+                .then(|| Claims::from_gateway_token(request))
+                .flatten()
+                .or_else(|| Claims::from_gateway(request));
+            if let Some(caller) = claims.and_then(|claims| (self.identify)(&claims)) {
                 return Ok(Some(caller));
             }
         }
@@ -635,11 +735,11 @@ impl<C, Who, Where> Access<C, Who, Where> {
                 let verified = verifier
                     .verify(token)
                     .await
-                    .map_err(|_| refusal(self.errors.invalid_token))?;
+                    .map_err(|_| refusal(self.refusals.invalid_token))?;
                 let claims = Claims::new(verified.all().clone());
                 return (self.identify)(&claims)
                     .map(Some)
-                    .ok_or_else(|| refusal(self.errors.invalid_token));
+                    .ok_or_else(|| refusal(self.refusals.invalid_token));
             }
         }
         Ok(None)
@@ -661,22 +761,23 @@ where
     ) -> Result<Self::Scope, Failure> {
         let caller = self.identify(request).await?;
         if Who::REQUIRED && caller.is_none() {
-            return Err(refusal(self.errors.unauthenticated));
+            return Err(refusal(self.refusals.unauthenticated));
         }
         let tenant = match &self.tenancy {
-            Some(tenancy) => tenancy.select(request, caller.as_ref(), self.errors.forbidden)?,
+            Some(tenancy) => tenancy.select(request, caller.as_ref(), self.refusals.forbidden)?,
             None => None,
         };
         if Where::REQUIRED && tenant.is_none() {
-            return Err(refusal(self.errors.tenant_required));
+            return Err(refusal(self.refusals.tenant_required));
         }
         if let Some(permit) = &self.permit {
             if !permit(caller.as_ref(), tenant.as_deref()) {
-                return Err(refusal(self.errors.forbidden));
+                return Err(refusal(self.refusals.forbidden));
             }
         }
-        let caller = Who::fulfil(caller).ok_or_else(|| refusal(self.errors.unauthenticated))?;
-        let tenant = Where::fulfil(tenant).ok_or_else(|| refusal(self.errors.tenant_required))?;
+        let caller = Who::fulfill(caller).ok_or_else(|| refusal(self.refusals.unauthenticated))?;
+        let tenant =
+            Where::fulfill(tenant).ok_or_else(|| refusal(self.refusals.tenant_required))?;
         Ok(Grant { caller, tenant })
     }
 }
@@ -684,13 +785,15 @@ where
 impl<C, Who, Where> fmt::Debug for Access<C, Who, Where> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug = f.debug_struct("Access");
-        debug.field("gateway_claims", &self.gateway);
+        debug
+            .field("gateway_claims", &self.gateway)
+            .field("gateway_token_claims", &self.gateway_token);
         #[cfg(feature = "auth")]
         debug.field("verify_bearer", &self.verifier.is_some());
         debug
             .field("tenancy", &self.tenancy)
             .field("permit", &self.permit.is_some())
-            .field("errors", &self.errors)
+            .field("refusals", &self.refusals)
             .finish_non_exhaustive()
     }
 }
@@ -703,7 +806,6 @@ fn refusal(definition: ErrorDefinition) -> Failure {
 /// The caller token in an `Authorization` value: `Bearer <token>` or a bare
 /// token. Any other scheme, or the `Bearer` scheme with no token, is not a
 /// caller token.
-#[cfg(feature = "auth")]
 fn bearer_token(value: &str) -> Option<&str> {
     let value = value.trim();
     match value.split_once(char::is_whitespace) {

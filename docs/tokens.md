@@ -2,7 +2,7 @@
 
 [`Verifier`](crate::auth::Verifier) checks a JSON Web Token signed with RS256 against the key set (JWKS) its issuer publishes. A [`VerifierConfig`](crate::auth::VerifierConfig) says what an acceptable token is: the exact issuer, the accepted audiences, claims that must equal a fixed value, the clock leeway for `exp`, and how often the key set may be fetched again. A successful check returns [`VerifiedClaims`](crate::auth::VerifiedClaims); a failed one returns a [`VerifyError`](crate::auth::VerifyError). The verifier authenticates and stops there: who may do what is your [`Policy`](crate::http::Policy).
 
-Behind an API Gateway authorizer, the token is already verified before the function runs, and [`Access`](crate::http::access::Access) reads its claims: prefer that wherever a gateway can sit in front. The verifier is for Function URLs, MCP servers and direct invocations, and for a second check behind a gateway; the [security chapter](crate::guide::aws_security) compares the two.
+Behind an API Gateway authorizer, the token is already verified before the function runs, and [`Access`](crate::http::access::Access) reads its claims without verifying anything again ([tokens the gateway already verified](crate::guide::access#tokens-the-gateway-already-verified)): prefer that wherever a gateway can sit in front. The verifier is for Function URLs, MCP servers and direct invocations, and for a second check behind a gateway; the [security chapter](crate::guide::aws_security) compares the two.
 
 ## Why it exists
 
@@ -32,7 +32,7 @@ let config = VerifierConfig::new(
     "https://id.example.com/.well-known/jwks.json",
 )
 .with_audiences(vec!["web".to_owned(), "mobile".to_owned()])
-.requiring("token_use", "id");
+.with_required_claim("token_use", "id");
 let verifier = Verifier::load(client::build(Limits::default())?, config).await?;
 # let _ = verifier;
 # Ok(())
@@ -45,7 +45,7 @@ The leeway defaults to 60 s. Set the public [`leeway`](crate::auth::VerifierConf
 
 ### Turn it into a policy
 
-A [`Policy`](crate::http::Policy) reads the `Authorization` header, verifies the token and maps the claims into the scope your handlers receive. Every failure is the same `401`; the reason goes into the failure's internal detail, which is logged and never rendered.
+A [`Policy`](crate::http::Policy) reads the `Authorization` header, verifies the token and maps the claims into the scope your handlers receive. Every failure is the same `401`; the reason goes into the failure's internal detail, which is never rendered and which the pipeline does not log: log it yourself where it helps.
 
 ```rust,no_run
 use std::sync::Arc;

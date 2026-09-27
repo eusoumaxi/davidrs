@@ -1,5 +1,5 @@
 //! An MCP server: one hand-written tool and the read operations of an OpenAPI
-//! document, for callers an API Gateway JWT authorizer verified. Runs under
+//! document, for callers verified by an API Gateway JWT authorizer. Runs under
 //! Cargo Lambda with `API_URL`, `MCP_URL` and `ISSUER` set.
 
 use std::sync::Arc;

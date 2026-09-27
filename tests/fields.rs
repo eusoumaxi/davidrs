@@ -190,8 +190,8 @@ fn a_dynamo_projection_puts_every_name_behind_a_placeholder() {
     assert_eq!(DynamoProjection::new([]).expression(), "");
 }
 
-/// The mask is a tree as deep as its longest path and is dropped
-/// recursively: read whole, a request-sized path overflows the stack.
+/// The mask is a tree as deep as its longest path, and dropping it recurses:
+/// parsed in full, a request-sized path would overflow the stack.
 #[test]
 fn a_path_deeper_than_the_limit_is_cut_instead_of_crashing() {
     let deep = vec!["a"; 100_000].join(".");

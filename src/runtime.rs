@@ -115,7 +115,7 @@ where
 /// context.deadline = 600_000;
 /// let invocation = davidrs::runtime::invocation_from(&context);
 /// assert_eq!(invocation.request_id, "r-1");
-/// assert!(!invocation.deadline.expired());
+/// assert!(!invocation.deadline.is_expired());
 /// assert_eq!(invocation.invoked_arn, None);
 /// ```
 pub fn invocation_from(context: &lambda_runtime::Context) -> Invocation {
@@ -137,7 +137,7 @@ pub fn invocation_from(context: &lambda_runtime::Context) -> Invocation {
 /// [`invocation_from`] describes. The HTTP adapters share it.
 pub(crate) fn epoch_ms_to_deadline(deadline_ms: u64) -> Deadline {
     if Duration::from_millis(deadline_ms) <= MAX_FUNCTION_TIMEOUT {
-        return Deadline::in_from_now(Duration::from_millis(deadline_ms));
+        return Deadline::after(Duration::from_millis(deadline_ms));
     }
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)

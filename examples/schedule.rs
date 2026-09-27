@@ -1,7 +1,7 @@
 //! A scheduled function over a typed payload.
 //!
-//! The schedule's payload is `{"older_than_days": 30}`. A payload that no
-//! longer matches [`Purge`] fails the invocation instead of running with
+//! The schedule's payload is `{"older_than_days": 30}`. A payload that does
+//! not match [`Purge`] fails the invocation instead of running with
 //! defaults. The handler only logs: nothing is deleted.
 
 use std::sync::Arc;

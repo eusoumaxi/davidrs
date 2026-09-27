@@ -9,7 +9,8 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::Layer;
 
-/// The level in `RUST_LOG`, or `INFO` when it is unset or not a bare level.
+/// The level in `RUST_LOG`: `INFO` when it is unset or not a bare level,
+/// and `ERROR` when it is empty, as `tracing` parses it.
 ///
 /// Only a bare level is read (`debug`, `WARN`, `off`, `3`). Directives such as
 /// `info,my_crate=debug` need `tracing-subscriber`'s `env-filter`, which pulls
@@ -46,7 +47,7 @@ pub fn init() -> Result<(), crate::RuntimeError> {
 /// # Errors
 ///
 /// Returns the step's own error.
-pub async fn initialize<T, E>(
+pub async fn timed_init<T, E>(
     component: &'static str,
     work: impl std::future::Future<Output = Result<T, E>>,
 ) -> Result<T, E> {

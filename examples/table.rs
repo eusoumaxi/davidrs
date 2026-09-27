@@ -8,8 +8,8 @@
 use std::sync::Arc;
 
 use aws_sdk_dynamodb::types::AttributeValue;
+use davidrs::dynamo::{self, CursorSecret, PageLimits};
 use davidrs::http::{Api, Failure, Json, PlainErrors, Public, Request};
-use davidrs::table::{self, CursorKey, PageLimits};
 use davidrs::{Context, RuntimeError};
 use serde::Deserialize;
 
@@ -17,7 +17,7 @@ use serde::Deserialize;
 struct App {
     ddb: aws_sdk_dynamodb::Client,
     table: String,
-    cursors: CursorKey,
+    cursors: CursorSecret,
 }
 
 /// The query string: whose orders, and the token of the page to read.
@@ -38,8 +38,8 @@ async fn list(
     let mut start = listing
         .next
         .as_deref()
-        .and_then(|token| table::decode_cursor_signed(token, &app.cursors));
-    let page = table::query_bounded(PageLimits::new(50, 5), context.deadline(), |resume| {
+        .and_then(|token| dynamo::decode_cursor_signed(token, &app.cursors));
+    let page = dynamo::query_bounded(PageLimits::new(50, 5), context.deadline(), |resume| {
         app.ddb
             .query()
             .table_name(&app.table)
@@ -51,11 +51,11 @@ async fn list(
     let items = page
         .items
         .into_iter()
-        .map(|item| table::to_object(item, &["PK", "SK"]))
+        .map(|item| dynamo::to_object(item, &["PK", "SK"]))
         .collect::<Result<Vec<_>, _>>()?;
     let next = page
         .next
-        .map(|key| table::encode_cursor_signed(key, &app.cursors))
+        .map(|key| dynamo::encode_cursor_signed(key, &app.cursors))
         .transpose()?;
     Ok(Json(serde_json::json!({ "items": items, "next": next })))
 }
@@ -67,7 +67,7 @@ async fn main() -> Result<(), RuntimeError> {
     let app = Arc::new(App {
         ddb: aws_sdk_dynamodb::Client::new(&config),
         table: davidrs::required_env("TABLE")?,
-        cursors: CursorKey::new(davidrs::required_env("CURSOR_SECRET")?.as_bytes()),
+        cursors: CursorSecret::new(davidrs::required_env("CURSOR_SECRET")?.as_bytes()),
     });
     Api::new("list", Public, PlainErrors)
         .run(

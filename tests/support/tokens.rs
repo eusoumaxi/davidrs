@@ -118,7 +118,7 @@ impl Jwks {
     pub fn config(&self) -> VerifierConfig {
         VerifierConfig::new(ISSUER, self.server.url("/jwks"))
             .with_audiences(vec!["web".to_owned()])
-            .requiring("token_use", "id")
+            .with_required_claim("token_use", "id")
     }
 
     /// A verifier for `config`, with its keys loaded.

@@ -229,7 +229,7 @@ fn init_exports_invocation_spans_as_server_spans_of_the_lambda_trace() {
     std::env::remove_var("AWS_XRAY_DAEMON_ADDRESS");
     assert_eq!(format!("{guard:?}"), "Guard { traces: true }");
 
-    let deadline = Deadline::in_from_now(Duration::from_secs(5));
+    let deadline = Deadline::after(Duration::from_secs(5));
     let first = Invocation::new("request-1", deadline).with_trace_id(Some(TRACE_HEADER.into()));
     let span = invocation_span("orders", &first);
     record_status(&span, 201);

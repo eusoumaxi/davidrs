@@ -71,7 +71,7 @@ When the load can fail, use `try_get_with`: the error is returned to every waiti
 
 ## Bounded gzip (`compression`)
 
-[`gzip`](crate::compression::gzip) compresses bytes. [`gunzip_limited`](crate::compression::gunzip_limited) and [`gunzip_to_string_limited`](crate::compression::gunzip_to_string_limited) decompress, refusing to produce more than a given number of bytes.
+[`gzip`](crate::compression::gzip) compresses bytes. [`gunzip_bounded`](crate::compression::gunzip_bounded) and [`gunzip_to_string_bounded`](crate::compression::gunzip_to_string_bounded) decompress, refusing to produce more than a given number of bytes.
 
 ### Why it exists
 
@@ -80,17 +80,17 @@ When the load can fail, use `try_get_with`: the error is returned to every waiti
 ### How to use it
 
 ```rust
-use davidrs::compression::{gunzip_limited, gunzip_to_string_limited, gzip};
+use davidrs::compression::{gunzip_bounded, gunzip_to_string_bounded, gzip};
 use davidrs::RuntimeError;
 
 let document = r#"{"orders":["order-1","order-2"]}"#;
 let packed = gzip(document.as_bytes())?;
-assert_eq!(gunzip_to_string_limited(&packed, 64 * 1024)?, document);
+assert_eq!(gunzip_to_string_bounded(&packed, 64 * 1024)?, document);
 
 let bomb = gzip(&vec![0; 1024 * 1024])?;
 assert!(bomb.len() < 4 * 1024);
 assert!(matches!(
-    gunzip_limited(&bomb, 64 * 1024),
+    gunzip_bounded(&bomb, 64 * 1024),
     Err(RuntimeError::LimitExceeded { kind: "decoded bytes", .. })
 ));
 # Ok::<(), RuntimeError>(())

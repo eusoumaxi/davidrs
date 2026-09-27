@@ -87,7 +87,7 @@ let batch: Batch = serde_json::from_value(serde_json::json!({
     ]
 }))
 .expect("batch");
-let invocation = Invocation::new("request-1", Deadline::in_from_now(Duration::from_secs(5)));
+let invocation = Invocation::new("request-1", Deadline::after(Duration::from_secs(5)));
 
 let response = davidrs::queue::process(Arc::new(()), batch, &invocation, &consume).await;
 

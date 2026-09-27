@@ -125,7 +125,7 @@ fn subject(claims: &Claims) -> Option<String> {
 let issuer = "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_EXAMPLE";
 let tokens = VerifierConfig::new(issuer, format!("{issuer}/.well-known/jwks.json"))
     .with_audiences(vec!["https://api.example.com".to_owned()])
-    .requiring("token_use", "access");
+    .with_required_claim("token_use", "access");
 let verifier = Arc::new(Verifier::deferred(client::build(Limits::default())?, tokens));
 
 let policy = Access::new(subject)
@@ -315,7 +315,7 @@ A user pool is an OpenID Connect issuer: `https://cognito-idp.<region>.amazonaws
 
 ## Use cases, end to end
 
-Each one names the AWS setup we recommend and exactly which `davidrs` features to use and which to skip.
+Each one names the recommended AWS setup and exactly which `davidrs` features to use and which to skip.
 
 **A public read API.** CloudFront in front of an HTTP API, a web ACL on the distribution with a rate-based rule per address, the core rule set and the IP reputation list, route throttling sized to the function, caching where responses allow it. In the function: [`Public`](crate::http::Public), a small [`body_limit`](crate::http::Api::body_limit) and typed query decoding; a [`Cors`](crate::http::stream::Cors) or the gateway's CORS configuration, not both. Skip [`RateLimited`](crate::http::RateLimited) unless one operation is expensive enough to deserve its own quota. Skip token verification entirely.
 

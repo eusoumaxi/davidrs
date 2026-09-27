@@ -9,7 +9,7 @@ With no features at all, the crate is its value types — [`RuntimeError`](crate
 | Feature | Enables | Links, beyond the always-on `thiserror` |
 | --- | --- | --- |
 | `runtime` | `runtime::run`, invocation metadata, `Deadline::run` | `lambda_runtime`, `tokio` (rt, time), `serde`, `serde_json` |
-| `http` | `http::Api`, `Request`, `Failure`, renderers, `access`, `RateLimited`, `fields`, `schema` | `runtime` + `lambda_http` (HTTP APIs, Function URLs), `serde_urlencoded`, `bytes` |
+| `http` | `http::Api`, `Request`, `Failure`, renderers, `access`, `RateLimited`, `fields`, `schema` | `runtime` + `lambda_http` (HTTP APIs, Function URLs), `serde_urlencoded`, `bytes`, `base64` |
 | `http-stream` | `http::stream::StreamApi`, `Cors`, `negotiate`, server-sent events | `http` + `streaming` + `http-body`, `http-body-util` |
 | `apigw-rest` | REST API events in both HTTP pipelines | `http` + `lambda_http/apigw_rest` |
 | `streaming` | `streaming::StreamBody`, `Producer`, `streaming::run` | `runtime` + `futures-util`, `tokio-util` |
@@ -18,13 +18,13 @@ With no features at all, the crate is its value types — [`RuntimeError`](crate
 | `event` | `event::run`, `Event<T>` | `runtime` |
 | `schedule` | `schedule::run` | `runtime` |
 | `aws` | `aws::sdk_config`, `aws::Trust` | `aws-types`, `aws-credential-types`, `aws-smithy-http-client` (rustls with ring), `aws-smithy-async` (Tokio timer) |
-| `dynamo` | `table::*`, `http::rate_limit::DynamoWindow` with `http` | `aws` + `aws-sdk-dynamodb`, `serde_dynamo`, `base64`, `tracing` |
-| `events` | `events::publish`, `publish_batch` | `aws` + `aws-sdk-eventbridge` |
+| `dynamo` | `dynamo::*`, `http::rate_limit::DynamoWindow` with `http` | `aws` + `aws-sdk-dynamodb`, `serde_dynamo`, `base64`, `tracing` |
+| `eventbridge` | `eventbridge::publish`, `publish_batch` | `aws` + `aws-sdk-eventbridge` |
 | `secrets` | `secrets::string`, `secrets::json` | `aws` + `aws-sdk-secretsmanager` |
 | `client` | `client::build`, `Limits`, `read_bounded`, `json_bounded`, `send_error` | `reqwest` (rustls, Mozilla roots), `rustls` (ring) |
 | `auth` | `auth::Verifier`, `VerifiedClaims`, `bearer` | `client` + `ring`, `base64` |
 | `cache` | `cache::Cache`, `CacheBuilder` | `moka` (future) |
-| `compression` | `compression::gzip`, `gunzip_limited` | `flate2` |
+| `compression` | `compression::gzip`, `gunzip_bounded` | `flate2` |
 | `digest` | `digest::sha256`, `sha256_hex`, `hex` | `ring` |
 | `validate` | `Request::validated_json` | `http` + `garde` (derive only) |
 | `problem` | `http::ProblemErrors` (RFC 9457) | `http` + `problem_details` |

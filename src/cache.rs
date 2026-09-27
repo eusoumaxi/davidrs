@@ -14,11 +14,11 @@
 //!
 //! use davidrs::cache::Cache;
 //!
-//! let rates: Cache<String, u32> = Cache::builder()
+//! let counts: Cache<String, u32> = Cache::builder()
 //!     .max_capacity(1_000)
 //!     .time_to_live(Duration::from_secs(300))
 //!     .build();
-//! # let _ = rates;
+//! # let _ = counts;
 //! ```
 
 pub use moka::future::{Cache, CacheBuilder};

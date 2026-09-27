@@ -24,7 +24,8 @@ use serde_json::{json, Value};
 
 const APP: &str = "https://app.example.com";
 
-/// A Function URL request for `GET /orders?status=open`, due in `budget`.
+/// A Function URL request to `/orders?status=open` with `method`, due in
+/// `budget`.
 fn event_due_in(method: &str, headers: Value, budget: Duration) -> LambdaEvent<Value> {
     let payload = json!({
         "version": "2.0",
@@ -503,7 +504,7 @@ fn an_sse_frame_splits_lines_and_omits_absent_fields() {
 }
 
 fn a_minute() -> Deadline {
-    Deadline::in_from_now(Duration::from_secs(60))
+    Deadline::after(Duration::from_secs(60))
 }
 
 #[tokio::test]

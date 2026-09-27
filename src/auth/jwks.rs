@@ -2,13 +2,16 @@
 //!
 //! An unknown `kid` is the signal to refresh, and it is fully
 //! attacker-controlled: "unknown kid, go fetch" makes every forged token an
-//! outbound request. Two bounds prevent that:
+//! outbound request. Three bounds prevent that:
 //!
 //! * **Coalescing.** A [`tokio::sync::Mutex`] serializes refreshes and every
 //!   waiter re-checks after acquiring it, so a thousand concurrent misses
 //!   cause one fetch.
 //! * **A minimum interval.** A refresh that just succeeded is not repeated, so
 //!   a sequential flood is bounded too.
+//! * **A cooldown after a failure.** A failed refresh is not retried for up to
+//!   five seconds, so an unreachable identity provider receives one request
+//!   per pause from each instance, not one per incoming token.
 //!
 //! The key map sits behind a [`std::sync::RwLock`] that is never held across
 //! an await.
@@ -48,7 +51,8 @@ pub(crate) struct KeyStore {
     http: reqwest::Client,
     url: String,
     keys: RwLock<HashMap<String, Jwk>>,
-    /// Serializes refreshes. Held across the fetch; never held with `keys`.
+    /// Serializes refreshes. Held across the fetch, while the `keys` lock
+    /// never is.
     refreshing: tokio::sync::Mutex<()>,
     /// When the last successful refresh completed.
     refreshed_at: RwLock<Option<Instant>>,

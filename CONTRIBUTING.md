@@ -1,6 +1,8 @@
 # Contributing
 
-`davidrs` is one crate with empty default features. Every rule below keeps it small, readable and verifiable. `scripts/check.sh` enforces all of them; run it before pushing, CI runs the same script.
+`davidrs` is one crate with empty default features. Every rule below keeps it small, readable and verifiable, and `scripts/check.sh` enforces them: run it before you push; CI runs the same steps.
+
+Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). Report security problems privately, as [SECURITY.md](SECURITY.md) explains, never in an issue.
 
 ## Design rules
 
@@ -9,6 +11,7 @@
 - **Additive features.** A feature enables only what it names. Update `docs/features.md` when a feature's links change.
 - **Keep the invariants:** one absolute deadline per invocation, bounded work, 5xx messages that cannot leak, honest partial outcomes, state and telemetry lifetimes owned by the caller.
 - **Nothing application-specific.** No company, product, customer or business domain appears in code, docs, tests or fixtures. Examples use neutral nouns (`orders`, `items`, `users`) and `example.com`.
+- **Rust conventions.** Names follow the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/); `rustfmt` formats the code and `clippy` lints it, both with the settings committed here.
 
 ## Comments are documentation
 
@@ -20,7 +23,7 @@ A doc comment is short and plain:
 2. Then, only when it is not obvious, why: the mistake it prevents or the rule it follows.
 3. `# Errors` for every fallible public function, `# Panics` if it can panic, `# Examples` for the items a user starts from.
 
-Write for a developer reading the item for the first time. No history ("moved from", "used to", "legacy"), no internal jargon.
+Write for a developer reading the item for the first time. No history ("moved from", "used to", "legacy", "workaround"), no internal jargon, no first person.
 
 ## Tests
 
@@ -34,15 +37,85 @@ Write for a developer reading the item for the first time. No history ("moved fr
 ## Checks
 
 ```bash
-scripts/check.sh            # everything CI runs
-scripts/check.sh coverage   # line coverage per file (needs cargo-llvm-cov)
+scripts/check.sh                  # everything CI runs
+scripts/check.sh lint             # one step: rules, lint, test, features, docs, package, spelling, workflows, deny
+scripts/check.sh coverage         # line coverage (needs cargo-llvm-cov)
+git config core.hooksPath .githooks   # once per clone: check branch names and commit messages locally
 ```
 
-Use Rust 1.98.1 (pinned in `rust-toolchain.toml`) and the committed `Cargo.lock`.
+Use Rust 1.98.1 (pinned in `rust-toolchain.toml`) and the committed `Cargo.lock`. The `spelling`, `workflows` and `deny` steps need [`typos`](https://github.com/crate-ci/typos), [`actionlint`](https://github.com/rhysd/actionlint) with [`shellcheck`](https://www.shellcheck.net), and [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny); `scripts/check.sh` skips them when they are not installed, CI never does.
+
+## Branches
+
+Work on a branch named `<type>/<description>`, never on `main`:
+
+- `<type>` is one of the commit types below: `feat/sqs-visibility`, `fix/42-jwks-refresh`, `docs/getting-started`.
+- `<description>` is lowercase words and digits joined by `-`, with an issue number first when there is one. A dot is allowed for a version: `chore/release-0.2.0`.
+
+`scripts/check.sh branch` checks the name, the hook runs it on every commit, and CI runs it on every pull request. Rename a branch with `git branch -m <type>/<description>`.
+
+## Commit messages
+
+Commits follow [Conventional Commits 1.0](https://www.conventionalcommits.org/en/v1.0.0/):
+
+```text
+<type>(<scope>): <description>
+
+<body>
+
+<footers>
+```
+
+- **type**: `feat` (a new capability), `fix` (a bug fix), `docs`, `test`, `refactor` (no change in behaviour), `perf`, `style` (formatting only), `build` (Cargo.toml, dependencies), `ci`, `chore` (anything else, such as a release), `revert`.
+- **scope**: optional; the module or area in lowercase: `http`, `queue`, `mcp`, `table`, `auth`, `deps`.
+- **description**: imperative mood, lowercase unless it starts with a name, no trailing period: `fix(queue): report unattempted records as failures`. The whole subject is at most 72 characters.
+- **body**: optional, after a blank line. Say what changes and why, wrapped at 72 characters.
+- **footers**: `BREAKING CHANGE: <what breaks and how to migrate>` for a breaking change (or `!` after the type or scope: `feat(http)!: …`), `Refs: #123`, and the AI trailer described below.
+
+Git's own `Merge`, `Revert`, `fixup!` and `squash!` subjects are accepted as they are; squash fixups before review. `scripts/check.sh commit-msg` checks a message, the hook runs it on every commit, and CI checks every commit and the title of every pull request.
+
+## Pull requests
+
+1. Open an issue first for anything larger than a fix, so the design is agreed before the code.
+2. Branch from `main`, keep one concern per pull request, and run `scripts/check.sh`.
+3. Add an entry under `## [Unreleased]` in `CHANGELOG.md` for every change a user can notice.
+4. Fill in the template, including the AI disclosure.
+5. Pull requests are squash-merged: the title becomes the commit on `main`, so it follows the commit convention too.
+
+A pull request needs the maintainer's review (`.github/CODEOWNERS`) and green checks.
+
+## AI-assisted contributions
+
+AI coding assistants are welcome. Their output meets the same bar as anyone's, and a person answers for every line.
+
+- **A person owns every pull request.** The author has read and understood every line, can explain it in review, and has run `scripts/check.sh`. Pull requests opened by an agent with no human author are closed.
+- **Disclose it.** Tick the AI box in the pull request template and name the assistant. Each commit an assistant helped write carries a trailer naming it, such as `Co-authored-by: <assistant> <address>` or `Assisted-by: <assistant>`.
+- **Same rules.** Branch names, commit messages, rustdoc-only comments, neutral vocabulary and tests through the public API apply unchanged. Agents read them from [`AGENTS.md`](AGENTS.md).
+- **Small and deliberate.** One concern per pull request. No generated churn: mass reformatting, speculative abstractions, reworded documentation that says nothing new, or tests that assert what the code happens to do rather than what it should do.
+- **No invented facts.** Every API, flag, limit and link a change mentions must exist. Limits of AWS services cite the AWS documentation, as the guide does.
+- **Verified reports only.** An issue or a security report must describe a problem you reproduced. Unverified output from a scanner or an assistant is closed.
+- **Your right to submit it.** You confirm that you may contribute the change under the MIT licence, and that it does not reproduce code whose licence forbids that.
+
+## Releases
+
+For the maintainer. Versions follow [Semantic Versioning](https://semver.org): before 1.0, a minor version (`0.x`) may break the public API, and the changelog says how; a patch version never does.
+
+1. On a branch such as `chore/release-0.2.0`, set `version` in `Cargo.toml`, rename `## [Unreleased]` in `CHANGELOG.md` to `## [0.2.0] - YYYY-MM-DD`, add a new empty `## [Unreleased]` above it, and update the links at the end of the file. Merge it as `chore(release): 0.2.0`.
+2. Tag the merged commit on `main` and push the tag:
+
+   ```bash
+   git switch main && git pull
+   git tag -a v0.2.0 -m "davidrs 0.2.0"
+   git push origin v0.2.0
+   ```
+
+3. The release workflow checks that the tag, `Cargo.toml` and `CHANGELOG.md` agree and that the commit is on `main`, runs CI, publishes the crate to crates.io, creates the GitHub release from the changelog section and rebuilds the documentation site. docs.rs builds the API reference by itself.
+
+Once per repository:
+
+- **First publish.** crates.io only accepts trusted publishing for a crate that already exists, so publish the first version from your machine with `cargo publish`. Then, on crates.io, add a trusted publisher to the crate: repository `eusoumaxi/davidrs`, workflow `release.yml`, environment `release`. Push the tag afterwards: the workflow sees the version is already published and only creates the release and the site.
+- **Environments.** In the repository settings, protect the `release` environment (for example, with a required reviewer), and allow tags `v*` to deploy to `github-pages`.
 
 ## Licence
 
-Unless you explicitly state otherwise, any contribution intentionally
-submitted for inclusion in this crate by you, as defined in the Apache-2.0
-license, shall be dual licensed under the MIT and Apache-2.0 licences,
-without any additional terms or conditions.
+`davidrs` is released under the [MIT licence](LICENSE). Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in the crate is licensed under the same terms, without any additional terms or conditions.

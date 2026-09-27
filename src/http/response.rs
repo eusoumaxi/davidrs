@@ -27,8 +27,9 @@ pub trait IntoResponse {
     ///
     /// # Errors
     ///
-    /// Returns a [`Failure`] when the value cannot be serialized. The failure
-    /// is a 500 whose detail is kept out of the body.
+    /// Returns a [`Failure`] when the value cannot be serialized: a `500`
+    /// whose detail is kept out of the body. `Option<T>` also returns a `404`
+    /// ([`codes::NOT_FOUND`](super::codes::NOT_FOUND)) for `None`.
     fn into_response(self) -> Result<HttpResponse, Failure>;
 }
 

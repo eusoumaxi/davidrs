@@ -15,7 +15,7 @@ use aws_sdk_dynamodb::config::{
 use aws_sdk_dynamodb::types::{AttributeValue, PutRequest, WriteRequest};
 use aws_sdk_dynamodb::Client;
 use aws_smithy_http_client::test_util::infallible_client_fn;
-use davidrs::table::{self, Item, PageLimits, Stop};
+use davidrs::dynamo::{self, Item, PageLimits, Stop};
 use davidrs::Deadline;
 use serde_json::{json, Value};
 
@@ -91,7 +91,7 @@ fn error(code: &str) -> (u16, Value) {
 }
 
 fn live() -> Deadline {
-    Deadline::in_from_now(Duration::from_secs(30))
+    Deadline::after(Duration::from_secs(30))
 }
 
 fn expired() -> Deadline {
@@ -140,7 +140,7 @@ fn sent_keys(call: &Call) -> Vec<Value> {
 async fn a_batch_write_splits_requests_into_batches_of_twenty_five() {
     let (client, log) = dynamodb(|_, _| (200, json!({})));
     let requests = (0..60).map(put).collect();
-    let outcome = table::batch_write(&client, "orders", requests, 5, live())
+    let outcome = dynamo::batch_write(&client, "orders", requests, 5, live())
         .await
         .expect("write");
     let sizes: Vec<usize> = calls(&log)
@@ -148,7 +148,7 @@ async fn a_batch_write_splits_requests_into_batches_of_twenty_five() {
         .map(|call| sent_writes(call).len())
         .collect();
     assert_eq!(sizes, vec![25, 25, 10]);
-    assert_eq!(table::MAX_BATCH_WRITE, 25);
+    assert_eq!(dynamo::MAX_BATCH_WRITE_REQUESTS, 25);
     assert_eq!((outcome.written, outcome.attempts), (60, 3));
     assert!(outcome.is_complete());
 }
@@ -167,7 +167,7 @@ async fn a_batch_write_sends_unprocessed_requests_again_after_a_pause() {
         }
     });
     let requests = (0..3).map(put).collect();
-    let outcome = table::batch_write(&client, "orders", requests, 3, live())
+    let outcome = dynamo::batch_write(&client, "orders", requests, 3, live())
         .await
         .expect("write");
     let calls = calls(&log);
@@ -193,7 +193,7 @@ async fn a_batch_write_out_of_attempts_reports_the_returned_and_the_unsent_reque
         )
     });
     let requests = (0..30).map(put).collect();
-    let outcome = table::batch_write(&client, "orders", requests, 1, live())
+    let outcome = dynamo::batch_write(&client, "orders", requests, 1, live())
         .await
         .expect("write");
     assert_eq!((outcome.written, outcome.attempts), (20, 1));
@@ -211,7 +211,7 @@ async fn a_batch_write_out_of_attempts_reports_the_returned_and_the_unsent_reque
 async fn a_batch_write_past_its_deadline_reports_every_request_unsent() {
     let (client, log) = dynamodb(|_, _| (200, json!({})));
     let requests = (0..3).map(put).collect();
-    let outcome = table::batch_write(&client, "orders", requests, 3, expired())
+    let outcome = dynamo::batch_write(&client, "orders", requests, 3, expired())
         .await
         .expect("write");
     assert!(calls(&log).is_empty());
@@ -224,7 +224,7 @@ async fn a_batch_write_past_its_deadline_reports_every_request_unsent() {
 #[tokio::test]
 async fn a_failed_batch_write_is_an_error_naming_the_table() {
     let (client, _log) = dynamodb(|_, _| error("ResourceNotFoundException"));
-    let failure = table::batch_write(&client, "orders", vec![put(1)], 3, live())
+    let failure = dynamo::batch_write(&client, "orders", vec![put(1)], 3, live())
         .await
         .expect_err("fails");
     assert_eq!(failure.to_string(), "batch write to orders");
@@ -237,7 +237,7 @@ async fn a_batch_get_splits_keys_into_batches_of_one_hundred_with_the_configurat
         (200, json!({ "Responses": { "orders": keys } }))
     });
     let keys = (0..150).map(key).collect();
-    let read = table::batch_get(&client, "orders", keys, 3, live(), |batch| {
+    let read = dynamo::batch_get(&client, "orders", keys, 3, live(), |batch| {
         batch.projection_expression("id")
     })
     .await
@@ -245,7 +245,7 @@ async fn a_batch_get_splits_keys_into_batches_of_one_hundred_with_the_configurat
     let calls = calls(&log);
     let sizes: Vec<usize> = calls.iter().map(|call| sent_keys(call).len()).collect();
     assert_eq!(sizes, vec![100, 50]);
-    assert_eq!(table::MAX_BATCH_GET, 100);
+    assert_eq!(dynamo::MAX_BATCH_GET_KEYS, 100);
     assert_eq!(
         calls[0].body["RequestItems"]["orders"]["ProjectionExpression"],
         "id"
@@ -274,7 +274,7 @@ async fn a_batch_get_asks_again_for_unprocessed_keys_only_after_a_pause() {
         }
     });
     let keys = (0..3).map(key).collect();
-    let read = table::batch_get(&client, "orders", keys, 3, live(), |batch| batch)
+    let read = dynamo::batch_get(&client, "orders", keys, 3, live(), |batch| batch)
         .await
         .expect("read");
     let calls = calls(&log);
@@ -302,7 +302,7 @@ async fn a_batch_get_out_of_attempts_reports_the_batch_and_every_later_one() {
         )
     });
     let keys = (0..150).map(key).collect();
-    let read = table::batch_get(&client, "orders", keys, 1, live(), |batch| batch)
+    let read = dynamo::batch_get(&client, "orders", keys, 1, live(), |batch| batch)
         .await
         .expect("read");
     assert_eq!(calls(&log).len(), 1);
@@ -317,7 +317,7 @@ async fn a_batch_get_out_of_attempts_reports_the_batch_and_every_later_one() {
 async fn a_batch_get_past_its_deadline_reports_every_key() {
     let (client, log) = dynamodb(|_, _| (200, json!({})));
     let keys = (0..3).map(key).collect();
-    let read = table::batch_get(&client, "orders", keys, 3, expired(), |batch| batch)
+    let read = dynamo::batch_get(&client, "orders", keys, 3, expired(), |batch| batch)
         .await
         .expect("read");
     assert!(calls(&log).is_empty());
@@ -327,7 +327,7 @@ async fn a_batch_get_past_its_deadline_reports_every_key() {
 #[tokio::test]
 async fn a_failed_batch_get_is_an_error_naming_the_table() {
     let (client, _log) = dynamodb(|_, _| error("ResourceNotFoundException"));
-    let failure = table::batch_get(&client, "orders", vec![key(1)], 3, live(), |batch| batch)
+    let failure = dynamo::batch_get(&client, "orders", vec![key(1)], 3, live(), |batch| batch)
         .await
         .expect_err("fails");
     assert_eq!(failure.to_string(), "batch read from orders");
@@ -336,7 +336,7 @@ async fn a_failed_batch_get_is_an_error_naming_the_table() {
 #[tokio::test]
 async fn a_batch_get_whose_configuration_drops_the_keys_is_an_error() {
     let (client, log) = dynamodb(|_, _| (200, json!({})));
-    let failure = table::batch_get(&client, "orders", vec![key(1)], 3, live(), |batch| {
+    let failure = dynamo::batch_get(&client, "orders", vec![key(1)], 3, live(), |batch| {
         batch.set_keys(None)
     })
     .await
@@ -382,7 +382,7 @@ fn query(
 #[tokio::test]
 async fn a_query_reads_every_page_until_the_service_has_no_more() {
     let (client, log) = dynamodb(paged(5, 2));
-    let page = table::query_bounded(PageLimits::new(10, 5), live(), query(&client))
+    let page = dynamo::query_bounded(PageLimits::new(10, 5), live(), query(&client))
         .await
         .expect("query");
     assert_eq!(page.items, (0..5).map(key).collect::<Vec<_>>());
@@ -400,7 +400,7 @@ async fn a_query_reads_every_page_until_the_service_has_no_more() {
 #[tokio::test]
 async fn a_query_stops_at_the_item_cap_with_an_exact_key_to_resume() {
     let (client, log) = dynamodb(paged(100, 50));
-    let page = table::query_bounded(PageLimits::new(3, 5), live(), query(&client))
+    let page = dynamo::query_bounded(PageLimits::new(3, 5), live(), query(&client))
         .await
         .expect("query");
     assert_eq!(page.items, (0..3).map(key).collect::<Vec<_>>());
@@ -414,7 +414,7 @@ async fn a_query_stops_at_the_item_cap_with_an_exact_key_to_resume() {
 async fn a_query_keeps_a_limit_smaller_than_the_cap() {
     let (client, log) = dynamodb(paged(100, 50));
     let mut build = query(&client);
-    let page = table::query_bounded(PageLimits::new(10, 1), live(), |start| {
+    let page = dynamo::query_bounded(PageLimits::new(10, 1), live(), |start| {
         build(start).limit(4)
     })
     .await
@@ -426,7 +426,7 @@ async fn a_query_keeps_a_limit_smaller_than_the_cap() {
 #[tokio::test]
 async fn a_page_larger_than_the_cap_is_cut_and_reported_incomplete() {
     let (client, _log) = dynamodb(|_, _| (200, json!({ "Items": wire_items(0..5) })));
-    let page = table::query_bounded(PageLimits::new(3, 5), live(), query(&client))
+    let page = dynamo::query_bounded(PageLimits::new(3, 5), live(), query(&client))
         .await
         .expect("query");
     assert_eq!(page.items.len(), 3);
@@ -437,7 +437,7 @@ async fn a_page_larger_than_the_cap_is_cut_and_reported_incomplete() {
 #[tokio::test]
 async fn a_query_stops_at_the_page_cap_with_a_key_to_resume() {
     let (client, log) = dynamodb(paged(100, 1));
-    let page = table::query_bounded(PageLimits::new(10, 2), live(), query(&client))
+    let page = dynamo::query_bounded(PageLimits::new(10, 2), live(), query(&client))
         .await
         .expect("query");
     assert_eq!(calls(&log).len(), 2);
@@ -449,7 +449,7 @@ async fn a_query_stops_at_the_page_cap_with_a_key_to_resume() {
 #[tokio::test]
 async fn a_query_past_its_deadline_reads_nothing_and_is_incomplete() {
     let (client, log) = dynamodb(paged(5, 2));
-    let page = table::query_bounded(PageLimits::new(10, 5), expired(), query(&client))
+    let page = dynamo::query_bounded(PageLimits::new(10, 5), expired(), query(&client))
         .await
         .expect("query");
     assert!(calls(&log).is_empty());
@@ -467,8 +467,8 @@ async fn a_query_that_reaches_its_deadline_between_pages_keeps_the_key_to_resume
         std::thread::sleep(Duration::from_millis(60));
         respond(operation, body)
     });
-    let deadline = Deadline::in_from_now(Duration::from_millis(30));
-    let page = table::query_bounded(PageLimits::new(10, 5), deadline, query(&client))
+    let deadline = Deadline::after(Duration::from_millis(30));
+    let page = dynamo::query_bounded(PageLimits::new(10, 5), deadline, query(&client))
         .await
         .expect("query");
     assert_eq!(calls(&log).len(), 1);
@@ -489,7 +489,7 @@ async fn a_failed_query_page_is_an_error_naming_the_page() {
             )
         }
     });
-    let failure = table::query_bounded(PageLimits::new(10, 5), live(), query(&client))
+    let failure = dynamo::query_bounded(PageLimits::new(10, 5), live(), query(&client))
         .await
         .expect_err("fails");
     assert_eq!(failure.to_string(), "query page 1");
@@ -498,7 +498,7 @@ async fn a_failed_query_page_is_an_error_naming_the_page() {
 #[tokio::test]
 async fn a_scan_pages_under_the_same_limits_as_a_query() {
     let (client, log) = dynamodb(paged(3, 2));
-    let page = table::scan_bounded(PageLimits::new(10, 5), live(), |start| {
+    let page = dynamo::scan_bounded(PageLimits::new(10, 5), live(), |start| {
         client
             .scan()
             .table_name("orders")
@@ -517,7 +517,7 @@ async fn a_scan_pages_under_the_same_limits_as_a_query() {
 #[tokio::test]
 async fn a_failed_scan_page_is_an_error_naming_the_page() {
     let (client, _log) = dynamodb(|_, _| error("ResourceNotFoundException"));
-    let failure = table::scan_bounded(PageLimits::new(10, 5), live(), |start| {
+    let failure = dynamo::scan_bounded(PageLimits::new(10, 5), live(), |start| {
         client
             .scan()
             .table_name("orders")
@@ -534,30 +534,30 @@ fn a_cursor_spells_one_key_one_way_and_round_trips() {
         .map(|(name, value)| (name.to_owned(), AttributeValue::S(value.to_owned())))
         .into_iter()
         .collect();
-    let token = table::encode_cursor(key.clone()).expect("token");
+    let token = dynamo::encode_cursor(key.clone()).expect("token");
     assert_eq!(
         token, "eyJwayI6ImEiLCJzayI6ImIifQ==",
         "attributes in name order"
     );
-    assert_eq!(table::decode_cursor(&token), Some(key));
+    assert_eq!(dynamo::decode_cursor(&token), Some(key));
 }
 
 #[test]
 fn a_token_this_module_did_not_write_starts_over() {
-    assert_eq!(table::decode_cursor("not base64!"), None);
-    assert_eq!(table::decode_cursor("bm90IGpzb24="), None, "not JSON");
+    assert_eq!(dynamo::decode_cursor("not base64!"), None);
+    assert_eq!(dynamo::decode_cursor("bm90IGpzb24="), None, "not JSON");
     assert_eq!(
-        table::decode_cursor("bnVsbA=="),
+        dynamo::decode_cursor("bnVsbA=="),
         None,
         "`null` is not a key"
     );
-    assert_eq!(table::decode_cursor("WzFd"), None, "`[1]` is not a key");
+    assert_eq!(dynamo::decode_cursor("WzFd"), None, "`[1]` is not a key");
 }
 
 #[test]
 fn a_key_with_a_binary_attribute_has_no_cursor() {
     let key = Item::from([("id".to_owned(), AttributeValue::B(vec![1, 2].into()))]);
-    let failure = table::encode_cursor(key).expect_err("binary");
+    let failure = dynamo::encode_cursor(key).expect_err("binary");
     assert_eq!(failure.to_string(), "encoding a page token");
 }
 
@@ -570,7 +570,7 @@ fn an_object_drops_only_the_named_attributes() {
     ]);
     item.insert("lines".to_owned(), AttributeValue::N("2".to_owned()));
     item.insert("paid".to_owned(), AttributeValue::Bool(true));
-    let object = table::to_object(item, &["PK", "SK"]).expect("object");
+    let object = dynamo::to_object(item, &["PK", "SK"]).expect("object");
     assert_eq!(
         Value::Object(object),
         json!({ "status": "open", "lines": 2, "paid": true })
@@ -580,7 +580,7 @@ fn an_object_drops_only_the_named_attributes() {
 #[test]
 fn an_item_with_a_binary_attribute_is_not_an_object() {
     let item = Item::from([("blob".to_owned(), AttributeValue::B(vec![1, 2].into()))]);
-    let failure = table::to_object(item, &[]).expect_err("binary");
+    let failure = dynamo::to_object(item, &[]).expect_err("binary");
     assert_eq!(failure.to_string(), "converting an item to JSON");
 }
 
@@ -605,8 +605,8 @@ async fn a_refused_condition_is_told_apart_from_other_failures() {
         .await
         .expect_err("refused");
     let invalid = put().send().await.expect_err("invalid");
-    assert!(table::is_conditional_failure(&refused));
-    assert!(!table::is_conditional_failure(&invalid));
+    assert!(dynamo::is_conditional_failure(&refused));
+    assert!(!dynamo::is_conditional_failure(&invalid));
 }
 
 /// A span's name and its fields as text.
@@ -657,7 +657,7 @@ impl tracing::Subscriber for Spans {
 fn a_span_names_the_call_the_way_the_service_graph_expects() {
     let spans = Arc::new(Spans::default());
     tracing::subscriber::with_default(Arc::clone(&spans), || {
-        drop(table::span("GetItem", "orders"));
+        drop(dynamo::span("GetItem", "orders"));
     });
     let recorded = spans.0.lock().expect("spans");
     let (name, fields) = &recorded[0];
@@ -687,8 +687,8 @@ fn start_key(order: &str) -> Item {
 
 #[test]
 fn a_signed_token_round_trips_and_is_safe_in_a_url() {
-    let secret = table::CursorKey::new(b"thirty-two bytes of cursor secret");
-    let token = table::encode_cursor_signed(start_key("7"), &secret).expect("token");
+    let secret = dynamo::CursorSecret::new(b"a cursor secret for tests");
+    let token = dynamo::encode_cursor_signed(start_key("7"), &secret).expect("token");
     assert!(
         token
             .chars()
@@ -696,7 +696,7 @@ fn a_signed_token_round_trips_and_is_safe_in_a_url() {
         "{token}"
     );
     assert_eq!(
-        table::decode_cursor_signed(&token, &secret),
+        dynamo::decode_cursor_signed(&token, &secret),
         Some(start_key("7"))
     );
 }
@@ -706,25 +706,25 @@ fn a_signed_token_round_trips_and_is_safe_in_a_url() {
 /// "first page".
 #[test]
 fn a_forged_or_edited_signed_token_is_refused() {
-    let secret = table::CursorKey::new(b"thirty-two bytes of cursor secret");
-    let token = table::encode_cursor_signed(start_key("7"), &secret).expect("token");
+    let secret = dynamo::CursorSecret::new(b"a cursor secret for tests");
+    let token = dynamo::encode_cursor_signed(start_key("7"), &secret).expect("token");
     let (payload, tag) = token.split_once('.').expect("two parts");
     let forged_payload = base64::Engine::encode(
         &base64::engine::general_purpose::URL_SAFE_NO_PAD,
         r#"{"PK":"TENANT#t2","SK":"ORDER#1"}"#,
     );
-    let other = table::CursorKey::new(b"another secret entirely, 32 bytes");
+    let other = dynamo::CursorSecret::new(b"another cursor secret");
     for candidate in [
         format!("{forged_payload}.{tag}"),
         format!("{payload}.{}", &tag[1..]),
-        table::encode_cursor_signed(start_key("7"), &other).expect("token"),
-        table::encode_cursor(start_key("7")).expect("unsigned"),
+        dynamo::encode_cursor_signed(start_key("7"), &other).expect("token"),
+        dynamo::encode_cursor(start_key("7")).expect("unsigned"),
         payload.to_owned(),
         "not a token".to_owned(),
         String::new(),
     ] {
         assert_eq!(
-            table::decode_cursor_signed(&candidate, &secret),
+            dynamo::decode_cursor_signed(&candidate, &secret),
             None,
             "{candidate}"
         );
@@ -733,8 +733,8 @@ fn a_forged_or_edited_signed_token_is_refused() {
 
 #[test]
 fn a_cursor_key_never_prints_its_secret() {
-    let secret = table::CursorKey::new(b"do-not-print-this-secret");
-    assert_eq!(format!("{secret:?}"), "CursorKey(..)");
+    let secret = dynamo::CursorSecret::new(b"do-not-print-this-secret");
+    assert_eq!(format!("{secret:?}"), "CursorSecret(..)");
 }
 
 /// [`DynamoWindow`](davidrs::http::rate_limit::DynamoWindow), the rate-limit

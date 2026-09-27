@@ -34,7 +34,7 @@ fn batch(queue: &str, bodies: &[(&str, &str)]) -> Batch {
 }
 
 fn with_budget(budget: Duration) -> Invocation {
-    Invocation::new("request-1", Deadline::in_from_now(budget))
+    Invocation::new("request-1", Deadline::after(budget))
 }
 
 fn live() -> Invocation {
@@ -179,7 +179,7 @@ fn the_native_envelope_deserializes_including_the_arn_spelling() {
 }
 
 #[test]
-fn an_absent_or_unparseable_receive_count_reads_as_a_first_attempt() {
+fn an_absent_or_unparsable_receive_count_reads_as_a_first_attempt() {
     let raw = serde_json::json!({
         "Records": [
             { "messageId": "a", "receiptHandle": "handle-a", "body": "" },

@@ -1,0 +1,48 @@
+name: Bug report
+description: Something in davidrs does not behave as its documentation says.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Report security problems privately through [private vulnerability reporting](https://github.com/eusoumaxi/davidrs/security/advisories/new), never here. Remove credentials, tokens and personal data from everything you paste.
+  - type: input
+    id: version
+    attributes:
+      label: davidrs version
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: features
+    attributes:
+      label: Enabled features
+      placeholder: "http, logs"
+    validations:
+      required: true
+  - type: dropdown
+    id: trigger
+    attributes:
+      label: Trigger
+      options:
+        - API Gateway HTTP API
+        - API Gateway REST API
+        - Lambda Function URL
+        - SQS
+        - EventBridge or a schedule
+        - Direct invocation
+        - Not related to a trigger
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: What happened
+      description: The smallest code or request that reproduces it, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Rust version, architecture (arm64 or x86_64), and anything else that matters.

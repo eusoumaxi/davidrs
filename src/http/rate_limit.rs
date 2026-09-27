@@ -234,7 +234,7 @@ impl<C: Counter> RateLimited<C> {
         }
     }
 
-    /// Counts under another key: an API key, a tenant, a user id.
+    /// Counts under another key: an API key's id or hash, a tenant, a user id.
     ///
     /// The key is part of the stored counter's identity; keep it short and
     /// never put a secret in it.
@@ -254,7 +254,7 @@ impl<C: Counter> RateLimited<C> {
 
 impl<C: Counter> Admission for RateLimited<C> {
     /// Counts the request; refuses it with the budget headers and a
-    /// `Retry-After` (whole seconds, rounded up) once the limit is passed.
+    /// `Retry-After` (whole seconds, rounded up) once the limit is exceeded.
     async fn check(
         &self,
         request: &Request<'_>,
@@ -312,7 +312,7 @@ mod dynamo {
     /// across every concurrent Lambda instance and costs one write per request.
     ///
     /// A window starts at a multiple of its length since the Unix epoch,
-    /// both counted in whole milliseconds (the length at least one). The
+    /// both in whole milliseconds; a length under 1 ms counts as 1 ms. The
     /// item's key is `RATE_LIMIT#<prefix>#<key>` / `WINDOW#<window start>` in
     /// the attributes named by [`DynamoWindow::attributes`] (`PK`, `SK` and
     /// `ttl` by default), and it expires when its window resets; enable TTL
@@ -388,7 +388,7 @@ mod dynamo {
                 .expression_attribute_values(":one", AttributeValue::N("1".to_owned()))
                 .return_values(ReturnValue::UpdatedNew)
                 .send()
-                .instrument(crate::table::span("UpdateItem", &self.table))
+                .instrument(crate::dynamo::span("UpdateItem", &self.table))
                 .await
                 .map_err(|error| RuntimeError::other("counting a request", error))?;
             let count = output

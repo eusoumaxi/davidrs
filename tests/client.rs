@@ -213,8 +213,8 @@ async fn json_bounded_applies_the_byte_limit_before_decoding() {
     assert!(is_limit(&error, 4), "{error}");
 }
 
-/// The readers never look at the status: deciding what a `500` means is the
-/// caller's, and its body is often the only diagnostic there is.
+/// The readers never look at the status: what a `500` means is up to the
+/// caller, and its body is often the only diagnostic there is.
 #[tokio::test]
 async fn an_error_status_is_read_like_any_other_body() {
     let server = Server::fixed(500, "application/json", r#"{"error":"busy"}"#).await;

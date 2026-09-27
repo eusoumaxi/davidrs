@@ -6,7 +6,7 @@
 
 A Lambda behind API Gateway is easy to write and easy to get subtly wrong:
 
-- **A 500 leaks internals.** `format!("{error}")` in an error body sends a table name, an address or a provider message to the client. Here every 5xx renders a fixed message, however the failure was built.
+- **A 500 leaks internals.** `format!("{error}")` in an error body sends a table name, an address or an upstream service's message to the client. Here every 5xx renders a fixed message, however the failure was built.
 - **A success answers 200 with a broken body.** Serialization that fails after the status is chosen sends an empty or truncated `200`. Here serialization is a step of the pipeline, and its failure is a rendered `500`.
 - **The rate limit reads the body first.** A limiter that runs after decoding pays for parsing every refused request. Here admission runs before anything is parsed.
 - **The body is unbounded.** A decoder that reads whatever arrives can be handed megabytes. Here every decoder, including one that reads raw bytes, sits behind a body limit.
@@ -118,7 +118,7 @@ The decoder and the policy receive a [`Request`](crate::http::Request), a borrow
 | [`query`](crate::http::Request::query) | the query string as `T` | `400 ERROR_INVALID_QUERY` |
 | [`query_pairs`](crate::http::Request::query_pairs) | every `(name, value)`, repetitions kept | — |
 | [`json`](crate::http::Request::json) | the body as `T` | `413`, `415`, `400 ERROR_MALFORMED_BODY` |
-| [`json_limited`](crate::http::Request::json_limited) | the same, under a tighter limit | the same |
+| [`json_bounded`](crate::http::Request::json_bounded) | the same, under a tighter limit | the same |
 | [`json_text`](crate::http::Request::json_text) | the body as UTF-8, for your own decoder | `413`, `415`, `400` |
 | [`raw_body`](crate::http::Request::raw_body) | the exact bytes, for a signature | — |
 | [`media_type`](crate::http::Request::media_type) | `Content-Type`, lowercased, without parameters | — |
@@ -154,7 +154,7 @@ assert_eq!((filter.status.as_str(), filter.page), ("open", Some(2)));
 assert_eq!(request.json::<Note>().unwrap().text, "call back");
 assert_eq!(request.media_type().as_deref(), Some("application/json"));
 
-let tight = request.json_limited::<Note>(8).unwrap_err();
+let tight = request.json_bounded::<Note>(8).unwrap_err();
 assert_eq!(tight.status().as_u16(), 413);
 ```
 
@@ -398,7 +398,7 @@ impl Admission for PerAddress {
 # #[tokio::main(flavor = "current_thread")]
 # async fn main() {
 let native = lambda_http::http::Request::builder().body(davidrs::http::Body::Empty).unwrap();
-let invocation = davidrs::Invocation::new("r", davidrs::Deadline::in_from_now(Duration::from_secs(1)));
+let invocation = davidrs::Invocation::new("r", davidrs::Deadline::after(Duration::from_secs(1)));
 let headers = PerAddress.check(&Request::new(&native), &invocation).await.unwrap();
 assert_eq!(headers[0], ("RateLimit-Policy".to_owned(), "\"default\";q=60;w=300".to_owned()));
 assert!(headers[1].1.starts_with("\"default\";r=7;t="));
@@ -418,11 +418,11 @@ Most codes come from your service. The pipeline refuses some requests before a h
 | `ERROR_BODY_TOO_LARGE` | 413 | the body is over the limit |
 | `ERROR_UNSUPPORTED_MEDIA_TYPE` | 415 | the body declares a media type other than JSON |
 | `ERROR_NOT_FOUND` | 404 | a handler returned `None` |
-| `ERROR_TIMEOUT` | 504 | the deadline ran out |
+| `ERROR_TIMEOUT` | 504 | the pipeline's deadline ran out (a converted [`RuntimeError`](crate::RuntimeError) deadline is a `500`) |
 | `FAULT_SERIALIZATION` | 500 | the success value did not serialize |
 | `ERROR_LIMIT_EXCEEDED`, `FAULT_UNHANDLED` | 500 | a [`RuntimeError`](crate::RuntimeError) was converted, or a catalog did not know a code |
 
-The streamed pipeline adds its own for CORS, methods and `Accept`; [`codes`](crate::http::codes) lists them all. A code's prefix is not a retry instruction: `ERROR_TIMEOUT` is a `504`.
+The streamed pipeline adds its own for CORS, methods and `Accept`; [`codes`](crate::http::codes) lists them all. A code's prefix is not a retry instruction: `ERROR_TIMEOUT` is a server-side failure.
 
 These spellings are defaults, not a contract you are stuck with. When your clients expect another vocabulary, map the codes in your renderer, which sees the whole failure:
 
@@ -439,7 +439,11 @@ impl ErrorRenderer for SnakeCase {
             other => other,
         };
         let body = serde_json::json!({"code": code, "message": failure.public_message()}).to_string();
-        literal(failure.status(), "application/json", body)
+        let mut response = literal(failure.status(), "application/json", body);
+        for (name, value) in failure.headers() {
+            response.headers_mut().insert(name.clone(), value.clone());
+        }
+        response
     }
 }
 

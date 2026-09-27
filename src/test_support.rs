@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use crate::{Deadline, Invocation};
 
-/// An invocation with a 30 second budget, for tests that do not exercise
+/// An invocation with a 30-second budget, for tests that do not exercise
 /// deadlines.
 ///
 /// ```
@@ -17,11 +17,11 @@ use crate::{Deadline, Invocation};
 ///
 /// let context = Context::new(test_support::invocation("r-1"), ());
 /// assert_eq!(context.invocation().request_id, "r-1");
-/// assert!(!context.deadline().expired());
+/// assert!(!context.deadline().is_expired());
 /// ```
 #[must_use]
 pub fn invocation(request_id: &str) -> Invocation {
-    Invocation::new(request_id, Deadline::in_from_now(Duration::from_secs(30)))
+    Invocation::new(request_id, Deadline::after(Duration::from_secs(30)))
 }
 
 /// An invocation whose budget has already run out.
@@ -36,7 +36,7 @@ pub fn expired_invocation(request_id: &str) -> Invocation {
 /// An invocation with `budget` left.
 #[must_use]
 pub fn invocation_with_budget(request_id: &str, budget: Duration) -> Invocation {
-    Invocation::new(request_id, Deadline::in_from_now(budget))
+    Invocation::new(request_id, Deadline::after(budget))
 }
 
 #[cfg(feature = "http")]
@@ -78,7 +78,7 @@ mod http_support {
     }
 
     /// Attaches a Lambda context with the request id `test-request-id` and a
-    /// 30 second budget.
+    /// 30-second budget.
     #[must_use]
     pub fn with_context(request: Request) -> Request {
         let mut context = lambda_runtime::Context::default();

@@ -1,8 +1,21 @@
 # Security
 
+## Supported versions
+
+Security fixes go to the latest release. Before 1.0, that is the latest `0.x` minor version: a fix for `0.3` ships as a `0.3.y` patch, and older minor versions are not patched.
+
 ## Reporting a vulnerability
 
-Please report vulnerabilities privately through GitHub's [private vulnerability reporting](https://github.com/eusoumaxi/davidrs/security/advisories/new) rather than in a public issue. Do not include real credentials, tokens or customer data in a report or a test fixture.
+Report vulnerabilities privately, never in a public issue or pull request:
+
+- through GitHub's [private vulnerability reporting](https://github.com/eusoumaxi/davidrs/security/advisories/new), or
+- by email to <hi@eusoumaxi.com>.
+
+Include the affected version and features, what an attacker can do, and the smallest code or request that reproduces it. Do not include real credentials, tokens or customer data in a report or a test fixture. A report must describe a problem you have reproduced; unverified output from a scanner or an AI tool is closed without review.
+
+## What happens next
+
+You get an acknowledgement within 7 days. The fix is developed in a private advisory, released as a patch version, and then disclosed: the GitHub security advisory is published, the vulnerability is submitted to the [RustSec advisory database](https://rustsec.org) so `cargo audit` and `cargo deny` warn every user, and the report is credited unless you prefer otherwise.
 
 ## Threat model
 

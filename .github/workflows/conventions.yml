@@ -1,0 +1,33 @@
+name: Conventions
+
+# Branch names, pull request titles and commit messages, as CONTRIBUTING.md
+# describes them. A separate workflow, so editing a pull request's title
+# re-runs these checks without re-running CI.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  conventions:
+    name: Branch, title and commits
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Branch name
+        run: scripts/check.sh branch "$BRANCH"
+        env:
+          BRANCH: ${{ github.head_ref }}
+      - name: Pull request title, which becomes the squashed commit
+        run: printf '%s\n' "$TITLE" | scripts/check.sh commit-msg /dev/stdin
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+      - name: Commit messages
+        run: scripts/check.sh commits "$BASE_SHA..$HEAD_SHA"
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}

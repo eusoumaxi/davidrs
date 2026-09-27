@@ -1,0 +1,3 @@
+# Product names that clippy's `doc_markdown` lint would otherwise ask to put in
+# backticks; `..` keeps clippy's own list.
+doc-valid-idents = ["CloudFront", "CloudWatch", "DynamoDB", "EventBridge", "OpenAPI", "OpenID", ".."]

@@ -64,7 +64,8 @@ fn a_zero_window_is_left_out_of_the_policy() {
     assert_eq!(limit.headers()[0].1, "\"default\";q=0");
 }
 
-/// A client that waits the whole seconds it is told must not come back early.
+/// A client that waits the whole number of seconds it is told must not come
+/// back early.
 #[test]
 fn the_window_and_the_reset_round_a_partial_second_up() {
     let config = RateLimitConfig::new("search", 60, Duration::from_millis(1_500));
@@ -160,7 +161,7 @@ async fn check<C: Counter>(
     admission: &RateLimited<C>,
     request: &lambda_http::Request,
 ) -> Result<Vec<(String, String)>, Failure> {
-    let invocation = Invocation::new("r1", Deadline::in_from_now(Duration::from_secs(5)));
+    let invocation = Invocation::new("r1", Deadline::after(Duration::from_secs(5)));
     admission.check(&Request::new(request), &invocation).await
 }
 

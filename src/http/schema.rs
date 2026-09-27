@@ -21,7 +21,7 @@
 //! or a UTF-16 client measures, and numeric bounds are printed without a
 //! trailing `.0` (`8`, not `8.0`).
 //!
-//! # Example
+//! # Examples
 //!
 //! ```
 //! use davidrs::http::schema::{self, Issues, NumberRule};
@@ -32,7 +32,7 @@
 //! schema::expect_string_min(object.get("name"), "name", 1, &mut issues);
 //! schema::expect_number(object.get("age"), "age", &NumberRule::int(), &mut issues);
 //!
-//! let failure = issues.into_error("INVALID_REQUEST").expect_err("invalid");
+//! let failure = issues.into_result("INVALID_REQUEST").expect_err("invalid");
 //! assert_eq!(
 //!     failure.public_message(),
 //!     "name: must be at least 1 character long; age: expected number, got string"
@@ -90,8 +90,7 @@ impl Issues {
     /// Whether any issue recorded since `mark` was an [`Issues::abort`].
     ///
     /// Gate a cross-field rule on this so it only reads values that parsed.
-    /// A `mark` past the end reads as "nothing since", which is what a mark
-    /// taken from an empty collection means anyway.
+    /// A `mark` past the end reads as "nothing since" instead of panicking.
     #[must_use]
     pub fn aborted_since(&self, mark: usize) -> bool {
         self.0[mark.min(self.0.len())..]
@@ -110,7 +109,7 @@ impl Issues {
     /// # Errors
     ///
     /// Returns the `400` whenever an issue was recorded.
-    pub fn into_error(self, code: &'static str) -> Result<(), Failure> {
+    pub fn into_result(self, code: &'static str) -> Result<(), Failure> {
         if self.0.is_empty() {
             return Ok(());
         }

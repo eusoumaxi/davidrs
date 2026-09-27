@@ -20,7 +20,7 @@ fn an_invocation_has_thirty_seconds_left() {
 fn an_expired_invocation_has_no_budget_left() {
     let invocation = expired_invocation("r-1");
     assert_eq!(invocation.request_id, "r-1");
-    assert!(invocation.deadline.expired());
+    assert!(invocation.deadline.is_expired());
 }
 
 #[test]

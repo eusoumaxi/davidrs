@@ -19,8 +19,9 @@ use crate::{Context, RuntimeError};
 ///
 /// Returns a [`RuntimeError`] only when the loop itself fails. A handler
 /// error, or a payload that does not deserialize into `T`, is reported to
-/// Lambda as an invocation error, so the schedule's retry policy and
-/// dead-letter queue see it.
+/// Lambda as an invocation error. Schedules invoke the function
+/// asynchronously, so Lambda's asynchronous retries and the function's
+/// on-failure destination or dead-letter queue act on it.
 ///
 /// # Examples
 ///

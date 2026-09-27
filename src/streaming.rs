@@ -22,7 +22,7 @@
 //! and a client that keeps reading could hold it open, so the producer also
 //! carries its own [`Deadline`].
 //!
-//! # Example
+//! # Examples
 //!
 //! ```
 //! use std::time::Duration;
@@ -33,7 +33,7 @@
 //!
 //! # #[tokio::main]
 //! # async fn main() {
-//! let deadline = Deadline::in_from_now(Duration::from_secs(5));
+//! let deadline = Deadline::after(Duration::from_secs(5));
 //! let body = StreamBody::spawn(4, deadline, |producer| async move {
 //!     for line in ["a\n", "b\n"] {
 //!         if !producer.send(line).await {
@@ -86,12 +86,13 @@ impl Producer {
     /// Whether the producer should stop: cancelled, out of budget, or nobody
     /// is listening. Check it between units of work.
     pub fn should_stop(&self) -> bool {
-        self.cancel.is_cancelled() || self.deadline.expired() || self.sender.is_closed()
+        self.cancel.is_cancelled() || self.deadline.is_expired() || self.sender.is_closed()
     }
 
-    /// Resolves when the body is dropped or cancelled.
+    /// Resolves when the body is dropped or cancelled, or the producer's
+    /// deadline passes.
     ///
-    /// Use it in a `select!` so a long provider call is abandoned promptly.
+    /// Use it in a `select!` so a long upstream call is abandoned promptly.
     pub async fn cancelled(&self) {
         self.cancel.cancelled().await;
     }
@@ -125,6 +126,10 @@ impl StreamBody {
     /// is dropped; an expired deadline also ends the stream with
     /// [`RuntimeError::DeadlineExceeded`]. Writes it already made to other
     /// services stay made, so they need idempotency or reconciliation.
+    ///
+    /// # Panics
+    ///
+    /// Outside a Tokio runtime, as [`tokio::spawn`] does.
     pub fn spawn<F, Fut>(capacity: usize, deadline: Deadline, produce: F) -> Self
     where
         F: FnOnce(Producer) -> Fut + Send + 'static,

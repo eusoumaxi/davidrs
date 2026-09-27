@@ -60,16 +60,16 @@ tracing::subscriber::with_default(subscriber, || {
 
 **What it does not do.** No per-target filtering, no JSON output and no sampling of log lines.
 
-## Timed startup: `initialize`
+## Timed startup: `timed_init`
 
-**What it is.** [`logs::initialize`](crate::telemetry::logs::initialize) awaits one startup step, logs an `initialized` event with the step's `component`, `init_ms` and `success`, and returns the step's result unchanged.
+**What it is.** [`logs::timed_init`](crate::telemetry::logs::timed_init) awaits one startup step, logs an `initialized` event with the step's `component`, `init_ms` and `success`, and returns the step's result unchanged.
 
-**Why it exists.** Cold starts are where Lambda latency hides, and the slow step is rarely the one you would guess. Timing each step by hand invites logging the value it produced or the error it failed with, and either may hold configuration or a secret. `initialize` logs only the name, the duration and whether it succeeded.
+**Why it exists.** Cold starts are where Lambda latency hides, and the slow step is rarely the one you would guess. Timing each step by hand invites logging the value it produced or the error it failed with, and either may hold configuration or a secret. `timed_init` logs only the name, the duration and whether it succeeded.
 
 **How to use it.** Wrap each step before the function starts serving:
 
 ```rust
-use davidrs::telemetry::logs::initialize;
+use davidrs::telemetry::logs::timed_init;
 
 struct Settings {
     table: String,
@@ -81,7 +81,7 @@ async fn load_settings() -> Result<Settings, std::io::Error> {
 
 # #[tokio::main(flavor = "current_thread")]
 # async fn main() -> Result<(), std::io::Error> {
-let settings = initialize("settings", load_settings()).await?;
+let settings = timed_init("settings", load_settings()).await?;
 assert_eq!(settings.table, "orders");
 # Ok(())
 # }
@@ -108,7 +108,7 @@ use std::time::Duration;
 use davidrs::telemetry::logs::invocation_span;
 use davidrs::{Deadline, Invocation};
 
-let invocation = Invocation::new("request-1", Deadline::in_from_now(Duration::from_secs(3)));
+let invocation = Invocation::new("request-1", Deadline::after(Duration::from_secs(3)));
 let span = invocation_span("get-order", &invocation);
 span.in_scope(|| tracing::info!("loading the order"));
 ```

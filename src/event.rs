@@ -1,6 +1,6 @@
 //! Typed EventBridge input.
 //!
-//! This is the receiving side. Publishing lives behind the `events` feature,
+//! This is the receiving side. Publishing lives behind the `eventbridge` feature,
 //! so a consumer does not link an SDK client it never calls.
 
 use std::future::Future;
@@ -36,8 +36,9 @@ pub struct Event<T> {
 ///
 /// Returns a [`RuntimeError`] only when the loop itself fails. A handler
 /// error, or an event whose `detail` does not deserialize into `T`, is
-/// reported to Lambda as an invocation error, which is what triggers the
-/// rule's retry and dead-letter policy.
+/// reported to Lambda as an invocation error. EventBridge invokes the
+/// function asynchronously, so Lambda's asynchronous retries and the
+/// function's on-failure destination or dead-letter queue act on it.
 ///
 /// # Examples
 ///

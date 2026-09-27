@@ -21,7 +21,7 @@
 //! - [`Mask::apply`] trims whatever remains, down to nested paths, before the
 //!   response is serialized.
 //!
-//! # Example
+//! # Examples
 //!
 //! ```
 //! use davidrs::http::fields::Mask;

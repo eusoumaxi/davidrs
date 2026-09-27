@@ -10,10 +10,10 @@ Use Rust 1.98.1 or later. Depend on the crate with default features off and only
 [dependencies]
 davidrs = { version = "0.1", default-features = false, features = ["http", "logs"] }
 serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["macros"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-`lambda_runtime` already brings Tokio's multi-threaded runtime, so the function's own manifest only needs Tokio's `macros` for `#[tokio::main]`.
+`#[tokio::main]` needs Tokio's `macros` and `rt-multi-thread` features. `lambda_runtime` enables both already, but list them in your own manifest so the function does not depend on another crate's choices.
 
 ## A first function
 
@@ -86,7 +86,7 @@ Start from what triggers the function, then add what the handler calls:
 | consumes an SQS queue | `queue` (+ `queue-visibility` to delay a retry) |
 | is an EventBridge target, or runs on a schedule | `event`, `schedule` |
 | is invoked directly with a JSON payload | `runtime` |
-| reads DynamoDB, publishes events, reads secrets | `aws` + `dynamo`, `events`, `secrets` |
+| reads DynamoDB, publishes events, reads secrets | `aws` + `dynamo`, `eventbridge`, `secrets` |
 | calls other HTTP services | `client` |
 | verifies bearer tokens itself | `auth` |
 | logs, emits metrics, traces to X-Ray | `logs`, `metrics`, `otel` |
@@ -110,16 +110,24 @@ async fn(Arc<App>, Input, Context<Scope>) -> Result<Output, Error>
 
 ## Running locally
 
-[Cargo Lambda](https://www.cargo-lambda.info) runs functions against a local Lambda emulator:
+[Cargo Lambda](https://www.cargo-lambda.info) runs functions against a local Lambda emulator. In production the `{name}` path parameter comes from the API Gateway route; locally, give the emulator the same route in the function's `Cargo.toml`:
 
-```bash
-cargo lambda watch                                   # serves every binary on :9000
-cargo lambda invoke hello --data-example apigw-request
+```toml
+[package.metadata.lambda.watch.router]
+"/hello/{name}" = "hello"
 ```
 
-The emulator sends a relative deadline instead of an epoch timestamp; the crate reads it as a budget from now, so deadlines behave as they do on Lambda.
+```bash
+cargo lambda watch                       # a local Lambda emulator on :9000
+curl http://localhost:9000/hello/world   # {"message":"Hello, world"}
+```
 
-The repository's `examples/` directory has one runnable program per trigger. None of them needs an AWS account except `table`, which reads a real DynamoDB table.
+Two differences from Lambda matter:
+
+- **The deadline.** The emulator always sends a relative budget of `600000` instead of an epoch timestamp. The crate reads it as ten minutes from now, whatever timeout the deployed function has, so exercise short deadlines in tests with [`test_support`](crate::test_support) instead.
+- **CORS.** The emulator adds permissive CORS headers to every response and answers preflights itself. Start it with `cargo lambda watch --disable-cors` to see what a [`Cors`](crate::http::stream::Cors) allowlist really answers.
+
+The repository's `examples/` directory has a program for each trigger and main feature. `cargo lambda watch` serves binary crates only, so to run one, copy it into a crate made with `cargo lambda new`. None of them needs an AWS account except `table`, which reads a real DynamoDB table.
 
 ## Deploying
 

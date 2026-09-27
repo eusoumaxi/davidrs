@@ -61,11 +61,13 @@ scripts/check.sh coverage     # line coverage, with a floor
 | Step | What it proves |
 | --- | --- |
 | `rules` | comments are rustdoc only, and `src/` has no test code |
-| `lint` | `rustfmt`, and `clippy -D warnings` with all features and with none |
+| `lint` | `rustfmt`, and `clippy -D warnings` with all features and with none, including the documentation lints |
 | `test` | every test and doctest with all features |
 | `features` | each feature alone compiles cleanly and passes its tests, so no feature silently depends on another |
 | `docs` | the API reference and this guide build with no warnings, and every link resolves |
 | `package` | the crate packages and builds from its own files |
+| `spelling` | code, comments and documentation have no known misspellings (`typos`) |
+| `workflows` | the GitHub Actions workflows and the shell scripts pass `actionlint` and `shellcheck` |
 | `deny` | third-party licences, sources and security advisories |
 | `coverage` | line coverage stays above the floor |
 

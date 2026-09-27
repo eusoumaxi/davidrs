@@ -13,7 +13,7 @@ Two smaller mistakes are prevented on the way:
 
 ## How to use it
 
-Call it once in `main`, before the loop starts, and build every client from the result. The `dynamo`, `events`, `secrets` and `queue-visibility` features each add the SDK crate of their service.
+Call it once in `main`, before the loop starts, and build every client from the result. The `dynamo`, `eventbridge`, `secrets` and `queue-visibility` features each add the SDK crate of their service.
 
 ```rust
 use davidrs::aws::{sdk_config, Trust};

@@ -13,7 +13,7 @@
 //! (`mcp::openapi`), each call forwarded to your API with the caller's own
 //! token.
 //!
-//! # Example
+//! # Examples
 //!
 //! ```no_run
 //! use std::sync::Arc;
@@ -56,9 +56,10 @@
 //! 3. **Policy**, for the endpoint only: its `401` carries
 //!    `WWW-Authenticate: Bearer resource_metadata="…"`.
 //! 4. **Protocol.** One JSON-RPC message whose metadata and mirrored headers
-//!    name revision [`PROTOCOL_VERSION`], or `-32022` for any other:
-//!    `server/discover`, `ping`, `tools/list` or `tools/call`. A notification
-//!    is `202`; any other method is `404` with `-32601`.
+//!    name revision [`PROTOCOL_VERSION`]; any other revision gets `-32022`.
+//!    The methods are `server/discover`, `ping`, `tools/list` and
+//!    `tools/call`. A notification gets `202`; any other method gets `404`
+//!    with `-32601`.
 //! 5. **Tool.** The handler runs under the invocation deadline less
 //!    [`CALL_MARGIN`], so a slow tool still returns a well-formed result.
 
@@ -138,6 +139,7 @@ where
     /// [`Access`](crate::http::access::Access) policy.
     ///
     /// [`Public`]: crate::http::Public
+    #[must_use]
     pub fn new(name: &'static str, version: &'static str, policy: P) -> Self {
         Self {
             name,
@@ -266,7 +268,7 @@ where
         self.api().handle(app, request, &decode, &serve).await
     }
 
-    /// Serves the server from the Lambda loop until the runtime stops.
+    /// Runs the server in the Lambda loop until the runtime stops.
     ///
     /// # Errors
     ///
@@ -532,6 +534,7 @@ impl ProtectedResource {
     /// The server's canonical URI, exactly as clients are configured with it
     /// (`https://mcp.example.com`, or `https://example.com/mcp`), and the
     /// issuers whose tokens it accepts.
+    #[must_use]
     pub fn new(
         resource: impl Into<String>,
         authorization_servers: impl IntoIterator<Item = impl Into<String>>,

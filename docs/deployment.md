@@ -7,13 +7,13 @@ From source to a running function: the tools, how to organize a project with man
 [Cargo Lambda](https://www.cargo-lambda.info) builds, runs and deploys Rust functions. It cross-compiles for Lambda's Linux with Zig, so a Mac or Windows machine builds the same `bootstrap` binary Lambda runs.
 
 ```bash
-brew install cargo-lambda zig          # or: pip3 install cargo-lambda
+brew install cargo-lambda/tap/cargo-lambda   # installs Zig too; or: pip3 install cargo-lambda
 
-cargo lambda new orders-get            # a new function crate
-cargo lambda watch                     # every binary on a local emulator, :9000
-cargo lambda invoke orders-get --data-example apigw-v2-request
-cargo lambda build --release --arm64   # target/lambda/<function>/bootstrap
-cargo lambda deploy orders-get         # quick manual deploy of one function
+cargo lambda new orders-get                        # a new function crate
+cargo lambda watch                                 # every binary on a local emulator, :9000
+cargo lambda invoke orders-get --data-file get.json   # one invocation with a payload you keep
+cargo lambda build --release --arm64               # target/lambda/<function>/bootstrap
+cargo lambda deploy orders-get                     # quick manual deploy of one function
 ```
 
 Build for `arm64`: Graviton functions cost less per millisecond than x86 ones, and Rust gives up nothing on them. The runtime is `provided.al2023` with the handler `bootstrap`.
@@ -151,7 +151,7 @@ producer ──▶ SQS queue ──▶ event source mapping ──▶ Lambda ─
                             └─ FunctionResponseTypes: ReportBatchItemFailures
 ```
 
-Turn on `ReportBatchItemFailures` in the event source mapping. Without it, Lambda ignores the per-record failures [`queue::run`](crate::queue::run) reports and redelivers the whole batch on any failure. Give the queue a dead-letter queue and a `maxReceiveCount`, and a visibility timeout of at least six times the function timeout.
+Turn on `ReportBatchItemFailures` in the event source mapping. Without it, Lambda ignores the per-record failures [`queue::run`](crate::queue::run) reports, treats the invocation as a success and deletes the whole batch, failed messages included. Give the queue a dead-letter queue and a `maxReceiveCount`, and a visibility timeout of at least six times the function timeout.
 
 ### EventBridge and schedules
 

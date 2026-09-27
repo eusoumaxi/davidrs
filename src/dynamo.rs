@@ -36,10 +36,10 @@ use crate::{Deadline, RuntimeError};
 pub type Item = HashMap<String, AttributeValue>;
 
 /// The largest batch `BatchWriteItem` accepts.
-pub const MAX_BATCH_WRITE: usize = 25;
+pub const MAX_BATCH_WRITE_REQUESTS: usize = 25;
 
 /// The largest batch `BatchGetItem` accepts.
-pub const MAX_BATCH_GET: usize = 100;
+pub const MAX_BATCH_GET_KEYS: usize = 100;
 
 /// The pause before the first retry of unprocessed work.
 const FIRST_BACKOFF: Duration = Duration::from_millis(25);
@@ -67,7 +67,7 @@ async fn back_off(retry: usize, deadline: Deadline) {
 ///     .get_item()
 ///     .table_name(&table)
 ///     .send()
-///     .instrument(davidrs::table::span("GetItem", &table))
+///     .instrument(davidrs::dynamo::span("GetItem", &table))
 ///     .await;
 /// # }
 /// ```
@@ -102,7 +102,7 @@ pub fn span(operation: &str, table: &str) -> tracing::Span {
 ///     .await;
 /// match result {
 ///     Ok(_) => Ok(true),
-///     Err(error) if davidrs::table::is_conditional_failure(&error) => Ok(false),
+///     Err(error) if davidrs::dynamo::is_conditional_failure(&error) => Ok(false),
 ///     Err(error) => Err(davidrs::RuntimeError::other("claiming order-1", error)),
 /// }
 /// # }
@@ -120,7 +120,7 @@ where
 
 /// An item as a JSON object, without the named attributes.
 ///
-/// Use it to answer a stored item without its physical keys:
+/// Use it to return a stored item without its physical keys:
 /// `to_object(item, &["PK", "SK"])`.
 ///
 /// # Errors
@@ -153,9 +153,9 @@ pub fn to_object(mut item: Item, without: &[&str]) -> Result<Map<String, Value>,
 ///     .map(|(k, v)| (k.to_owned(), AttributeValue::S(v.to_owned())))
 ///     .into_iter()
 ///     .collect();
-/// let token = davidrs::table::encode_cursor(key).expect("token");
+/// let token = davidrs::dynamo::encode_cursor(key).expect("token");
 /// assert_eq!(token, "eyJQSyI6ImEiLCJTSyI6ImIifQ==");
-/// assert!(davidrs::table::decode_cursor(&token).is_some());
+/// assert!(davidrs::dynamo::decode_cursor(&token).is_some());
 /// ```
 pub fn encode_cursor(key: Item) -> Result<String, RuntimeError> {
     let key: BTreeMap<String, Value> = serde_dynamo::aws_sdk_dynamodb_1::from_item(key)
@@ -184,9 +184,9 @@ pub fn decode_cursor(token: &str) -> Option<Item> {
 /// Read it once at cold start — from Secrets Manager, say — and keep it in
 /// the application state. Changing it invalidates every token in flight,
 /// which only sends their clients back to the first page.
-pub struct CursorKey(ring::hmac::Key);
+pub struct CursorSecret(ring::hmac::Key);
 
-impl CursorKey {
+impl CursorSecret {
     /// A key from secret bytes; 32 random bytes are enough.
     #[must_use]
     pub fn new(secret: &[u8]) -> Self {
@@ -194,9 +194,9 @@ impl CursorKey {
     }
 }
 
-impl std::fmt::Debug for CursorKey {
+impl std::fmt::Debug for CursorSecret {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("CursorKey(..)")
+        f.write_str("CursorSecret(..)")
     }
 }
 
@@ -204,8 +204,8 @@ impl std::fmt::Debug for CursorKey {
 /// as it is.
 const URL_SAFE: base64::engine::GeneralPurpose = base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
-/// A `LastEvaluatedKey` as a signed page token that a client can hold but
-/// neither read nor change.
+/// A `LastEvaluatedKey` as a signed page token that a client can hold and
+/// read but not change.
 ///
 /// The token is the key's JSON and its HMAC-SHA256 under `secret`, both in
 /// URL-safe base64. A forged or edited token fails verification in
@@ -222,15 +222,15 @@ const URL_SAFE: base64::engine::GeneralPurpose = base64::engine::general_purpose
 ///
 /// ```
 /// use aws_sdk_dynamodb::types::AttributeValue;
-/// use davidrs::table::{decode_cursor_signed, encode_cursor_signed, CursorKey};
+/// use davidrs::dynamo::{decode_cursor_signed, encode_cursor_signed, CursorSecret};
 ///
-/// let secret = CursorKey::new(b"a secret read at cold start, 32 bytes");
+/// let secret = CursorSecret::new(b"a secret read at cold start, 32 bytes");
 /// let key = [("PK".to_owned(), AttributeValue::S("ORDER#7".to_owned()))].into_iter().collect();
 /// let token = encode_cursor_signed(key, &secret).expect("token");
 /// assert!(decode_cursor_signed(&token, &secret).is_some());
 /// assert!(decode_cursor_signed(&format!("{token}x"), &secret).is_none());
 /// ```
-pub fn encode_cursor_signed(key: Item, secret: &CursorKey) -> Result<String, RuntimeError> {
+pub fn encode_cursor_signed(key: Item, secret: &CursorSecret) -> Result<String, RuntimeError> {
     let key: BTreeMap<String, Value> = serde_dynamo::aws_sdk_dynamodb_1::from_item(key)
         .map_err(|error| RuntimeError::other("encoding a page token", error))?;
     let json = Value::Object(key.into_iter().collect()).to_string();
@@ -247,7 +247,7 @@ pub fn encode_cursor_signed(key: Item, secret: &CursorKey) -> Result<String, Run
 ///
 /// The signature is checked in constant time, before the key is parsed.
 #[must_use]
-pub fn decode_cursor_signed(token: &str, secret: &CursorKey) -> Option<Item> {
+pub fn decode_cursor_signed(token: &str, secret: &CursorSecret) -> Option<Item> {
     let (payload, tag) = token.split_once('.')?;
     let json = URL_SAFE.decode(payload).ok()?;
     let tag = URL_SAFE.decode(tag).ok()?;
@@ -350,7 +350,7 @@ where
     let mut items: Vec<Item> = Vec::new();
     let mut start: Option<Item> = None;
     for page in 0..limits.max_pages {
-        if deadline.expired() {
+        if deadline.is_expired() {
             return Ok(Page {
                 items,
                 next: start,
@@ -464,7 +464,7 @@ where
 /// The outcome of a bounded batch write.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[non_exhaustive]
-pub struct BatchOutcome {
+pub struct BatchWriteOutcome {
     /// How many requests the service accepted.
     pub written: usize,
     /// Requests not written: those the last attempt returned as unprocessed,
@@ -476,7 +476,7 @@ pub struct BatchOutcome {
     pub attempts: usize,
 }
 
-impl BatchOutcome {
+impl BatchWriteOutcome {
     /// Whether every request was written.
     #[must_use]
     pub fn is_complete(&self) -> bool {
@@ -484,7 +484,7 @@ impl BatchOutcome {
     }
 }
 
-/// Writes put and delete requests in batches of [`MAX_BATCH_WRITE`],
+/// Writes put and delete requests in batches of [`MAX_BATCH_WRITE_REQUESTS`],
 /// retrying only the ones the service left unprocessed.
 ///
 /// `BatchWriteItem` succeeds while returning requests it did not apply. This
@@ -503,9 +503,9 @@ pub async fn batch_write(
     requests: Vec<WriteRequest>,
     max_attempts: usize,
     deadline: Deadline,
-) -> Result<BatchOutcome, RuntimeError> {
+) -> Result<BatchWriteOutcome, RuntimeError> {
     let total = requests.len();
-    let mut outcome = BatchOutcome::default();
+    let mut outcome = BatchWriteOutcome::default();
     let mut pending: Vec<_> = requests;
     let mut retry = 0;
 
@@ -513,12 +513,12 @@ pub async fn batch_write(
         if retry > 0 {
             back_off(retry, deadline).await;
         }
-        if deadline.expired() {
+        if deadline.is_expired() {
             break;
         }
         outcome.attempts += 1;
         let chunk: Vec<_> = pending
-            .drain(..pending.len().min(MAX_BATCH_WRITE))
+            .drain(..pending.len().min(MAX_BATCH_WRITE_REQUESTS))
             .collect();
         let sent = chunk.len();
         let response = client
@@ -547,7 +547,7 @@ pub async fn batch_write(
 /// The outcome of a bounded batch read.
 #[derive(Debug, Clone, Default, PartialEq)]
 #[non_exhaustive]
-pub struct BatchRead {
+pub struct BatchGetOutcome {
     /// The items found, in the order the service returned them. A key with
     /// no item is simply absent.
     pub items: Vec<Item>,
@@ -558,7 +558,7 @@ pub struct BatchRead {
     pub unprocessed: Vec<Item>,
 }
 
-impl BatchRead {
+impl BatchGetOutcome {
     /// Whether every key was read.
     #[must_use]
     pub fn is_complete(&self) -> bool {
@@ -566,13 +566,13 @@ impl BatchRead {
     }
 }
 
-/// Reads items by key, [`MAX_BATCH_GET`] at a time, retrying only the keys
+/// Reads items by key, [`MAX_BATCH_GET_KEYS`] at a time, retrying only the keys
 /// the service left unprocessed.
 ///
 /// Each batch gets up to `max_attempts` requests, with a doubling pause
 /// between them; the deadline is checked before every request. When a batch
 /// runs out of attempts or time, its keys and every later batch's keys are
-/// reported in [`BatchRead::unprocessed`]. `configure` sets anything else on
+/// reported in [`BatchGetOutcome::unprocessed`]. `configure` sets anything else on
 /// each batch, such as a projection or consistent reads.
 ///
 /// Keys must be distinct: the service rejects a batch that repeats one.
@@ -588,14 +588,14 @@ pub async fn batch_get<F>(
     max_attempts: usize,
     deadline: Deadline,
     configure: F,
-) -> Result<BatchRead, RuntimeError>
+) -> Result<BatchGetOutcome, RuntimeError>
 where
     F: Fn(
         aws_sdk_dynamodb::types::builders::KeysAndAttributesBuilder,
     ) -> aws_sdk_dynamodb::types::builders::KeysAndAttributesBuilder,
 {
-    let mut read = BatchRead::default();
-    let mut batches = keys.chunks(MAX_BATCH_GET).map(<[Item]>::to_vec);
+    let mut read = BatchGetOutcome::default();
+    let mut batches = keys.chunks(MAX_BATCH_GET_KEYS).map(<[Item]>::to_vec);
     while let Some(mut pending) = batches.next() {
         for attempt in 0..max_attempts {
             if pending.is_empty() {
@@ -604,7 +604,7 @@ where
             if attempt > 0 {
                 back_off(attempt, deadline).await;
             }
-            if deadline.expired() {
+            if deadline.is_expired() {
                 break;
             }
             let request = configure(KeysAndAttributes::builder().set_keys(Some(pending)))

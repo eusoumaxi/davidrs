@@ -15,8 +15,8 @@ struct OrderPlaced {
     paid: bool,
 }
 
-/// Deletes paid orders, asks for unpaid ones again, and fails a message
-/// without an order id.
+/// Deletes the message of a paid order, asks for an unpaid one again, and
+/// fails a message without an order id.
 async fn consume(
     _app: Arc<()>,
     delivery: Delivery,

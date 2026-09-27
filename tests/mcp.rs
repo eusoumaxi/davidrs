@@ -496,7 +496,7 @@ async fn a_success_that_cannot_be_serialized_is_a_tool_error() {
     );
 }
 
-/// The invocation has 1.5 s left; the tool gets that less the one second
+/// The invocation has 1.5 s left; the tool gets that minus the one-second
 /// margin, and answers with a result long before Lambda would stop it.
 #[tokio::test]
 async fn a_tool_that_outlives_its_deadline_is_a_timeout_result() {
@@ -596,7 +596,7 @@ async fn the_admission_counts_every_request_and_its_refusal_keeps_its_headers() 
 }
 
 #[tokio::test]
-async fn any_other_method_than_post_is_a_405_naming_post() {
+async fn any_method_other_than_post_is_a_405_naming_post() {
     for method in ["GET", "DELETE", "PUT"] {
         let request = event(method, "/", json!({}), None, None);
         let (status, headers, body) = send(&server(), request).await;

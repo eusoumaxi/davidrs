@@ -78,6 +78,104 @@ Prefer the gateway authorizer wherever one can sit in front: it refuses bad toke
 
 Turn gateway claims off with `.gateway_claims(false)` when anything other than API Gateway may invoke the function.
 
+### Tokens the gateway already verified
+
+With a JWT authorizer, a Cognito authorizer or a Lambda authorizer in front, API Gateway verifies the token before the function is invoked: signature, issuer, audience, expiry and, on an HTTP API route, its scopes. The function still receives the `Authorization: Bearer …` header, but nothing is left to verify — no key set to fetch, no signature to check. What remains is the token's structure: which claims describe the caller.
+
+- **Leave `verify_bearer` off.** A second verification adds a key fetch and proves nothing the gateway has not proved.
+- **Map the claims.** `Access` hands the authorizer's claims to your mapping function. An HTTP API authorizer passes them as strings, and a list arrives as `"[a b]"`, which [`Claims::list`](crate::http::access::Claims::list) reads.
+- **Keep nested claims whole** with [`gateway_token_claims(true)`](crate::http::access::Access::gateway_token_claims). An HTTP API authorizer also turns an object claim into text that is no longer JSON. With this setting the policy reads the claims from the token in the `Authorization` header — the one the authorizer just verified — and keeps their JSON types. It reads the token only when the request carries authorizer claims whose issuer, and every other text claim both carry, match the token's, so a route without an authorizer never trusts an unverified token. [`Claims::from_gateway_token`](crate::http::access::Claims::from_gateway_token) does the same outside a policy.
+- **Restrict who may invoke.** Gateway claims are trusted because only API Gateway writes them: grant `lambda:InvokeFunction` to `apigateway.amazonaws.com` for that API alone.
+
+How common providers look behind an HTTP API JWT authorizer, whose configuration is an issuer and a list of audiences:
+
+| Provider | Issuer | Audience the authorizer checks | Claims to map |
+| --- | --- | --- | --- |
+| Amazon Cognito | `https://cognito-idp.<region>.amazonaws.com/<pool-id>` | the app client ID, matched against an access token's `client_id` | `sub`, `scope` (space-separated), `cognito:groups` (a list) |
+| Auth0 | your Auth0 domain with a trailing slash, `https://<tenant>.auth0.com/` | the API identifier in `aud` | `sub`, `scope`, `permissions` (a list, with RBAC), namespaced claims such as `https://example.com/roles` |
+| Okta | a custom authorization server, `https://<org>.okta.com/oauth2/<server-id>` | the server's audience | `sub`, `scp` (a list), `groups` when a claim is configured |
+| Microsoft Entra ID | `https://login.microsoftonline.com/<tenant-id>/v2.0` | the API's application (client) ID | `oid` (a stable user ID), `scp` (space-separated), `roles` (a list) |
+| Keycloak | `https://<host>/realms/<realm>` | the audience an audience mapper adds for the API | `sub`, `realm_access.roles` (nested) |
+| Clerk | your Clerk Frontend API URL | none by default: a session token has no `aud` | a JWT template that adds `aud` and the claims you need |
+
+One mapping per provider, all built on the same caller type:
+
+```rust
+use davidrs::http::access::{Access, Claims};
+use serde_json::Value;
+
+/// The application's caller, whichever provider signed the token.
+struct User {
+    id: String,
+    roles: Vec<String>,
+    scopes: Vec<String>,
+}
+
+/// An Amazon Cognito access token.
+fn cognito(claims: &Claims) -> Option<User> {
+    Some(User {
+        id: claims.subject()?.to_owned(),
+        roles: claims.list("cognito:groups"),
+        scopes: claims.list("scope"),
+    })
+}
+
+/// An Auth0 access token with RBAC permissions and a namespaced roles claim.
+fn auth0(claims: &Claims) -> Option<User> {
+    Some(User {
+        id: claims.subject()?.to_owned(),
+        roles: claims.list("https://example.com/roles"),
+        scopes: claims.list("permissions"),
+    })
+}
+
+/// A Microsoft Entra ID access token, whose stable user ID is `oid`.
+fn entra(claims: &Claims) -> Option<User> {
+    Some(User {
+        id: claims.string("oid")?.to_owned(),
+        roles: claims.list("roles"),
+        scopes: claims.list("scp"),
+    })
+}
+
+/// A Keycloak access token, whose realm roles sit in a nested object.
+fn keycloak(claims: &Claims) -> Option<User> {
+    let roles = claims
+        .get("realm_access")
+        .and_then(|access| access.get("roles"))
+        .and_then(Value::as_array)
+        .map(|roles| roles.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+        .unwrap_or_default();
+    Some(User {
+        id: claims.subject()?.to_owned(),
+        roles,
+        scopes: claims.list("scope"),
+    })
+}
+
+let cognito_policy = Access::new(cognito).require_caller();
+let auth0_policy = Access::new(auth0).require_caller();
+let entra_policy = Access::new(entra).require_caller();
+let keycloak_policy = Access::new(keycloak).gateway_token_claims(true).require_caller();
+# let _ = (auth0_policy, entra_policy, keycloak_policy, cognito_policy);
+
+let verified = Claims::new(
+    serde_json::from_value(serde_json::json!({
+        "sub": "alice",
+        "cognito:groups": "[admin editors]",
+        "scope": "orders/read orders/write",
+    }))
+    .unwrap(),
+);
+let user = cognito(&verified).unwrap();
+assert_eq!(user.roles, ["admin", "editors"]);
+assert_eq!(user.scopes, ["orders/read", "orders/write"]);
+```
+
+**Opaque tokens.** An OAuth access token that is not a JWT — a reference token, as GitHub and some authorization servers issue — cannot be read or verified inside the function: the JWT authorizer refuses it, and [`auth::Verifier`](crate::auth::Verifier) reads RS256 JWTs only. Put a Lambda authorizer in front that asks the authorization server about the token, through its introspection endpoint (RFC 7662) or its user endpoint, and returns the caller in its context, such as `{"isAuthorized": true, "context": {"sub": "…", "scope": "…"}}`. API Gateway caches the answer per token, and `Access` reads that context like any other gateway claims, so a mapping such as `cognito` above works unchanged.
+
+**No gateway in front.** A Function URL, an MCP server behind CloudFront or a direct invocation has no authorizer, and its token is only a claim until verified: use `verify_bearer`, described in [tokens](crate::guide::tokens).
+
 ### The order of checks
 
 A request with several problems always gets the earliest refusal:
@@ -88,7 +186,7 @@ A request with several problems always gets the earliest refusal:
 4. no tenant on a route that requires one → `400` `ERROR_TENANT_REQUIRED`
 5. the permission rule says no → `403` `ERROR_FORBIDDEN`
 
-Keep your own codes with [`Access::errors`](crate::http::access::Access::errors) and an [`AccessErrors`](crate::http::access::AccessErrors) value.
+Keep your own codes with [`Access::refusals`](crate::http::access::Access::refusals) and a [`Refusals`](crate::http::access::Refusals) value.
 
 ### Use cases
 

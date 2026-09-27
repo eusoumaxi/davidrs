@@ -89,6 +89,7 @@ impl<App, Scope> Tool<App, Scope> {
     /// [`INVALID_ARGUMENTS`] before the handler runs. A success that
     /// serializes to an object is also returned as `structuredContent`; a
     /// string is returned as plain text.
+    #[must_use]
     pub fn new<A, T, H, F>(
         name: impl Into<String>,
         description: impl Into<String>,

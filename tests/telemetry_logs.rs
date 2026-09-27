@@ -9,7 +9,7 @@ use std::fmt::{self, Write as _};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use davidrs::telemetry::logs::{self, initialize, invocation_span, level_from_env};
+use davidrs::telemetry::logs::{self, invocation_span, level_from_env, timed_init};
 use davidrs::{Deadline, Invocation};
 use tracing::field::Field;
 use tracing::span::{Attributes, Id, Record};
@@ -108,12 +108,12 @@ async fn startup_logs_its_component_duration_and_outcome_and_returns_the_result(
     let (recorder, subscriber) = recording();
     let _default = tracing::subscriber::set_default(subscriber);
 
-    let ready = initialize("store", async {
+    let ready = timed_init("store", async {
         tokio::time::sleep(Duration::from_millis(20)).await;
         Ok::<_, String>(7)
     })
     .await;
-    let failed = initialize("secret", async { Err::<(), _>("token=hunter2".to_owned()) }).await;
+    let failed = timed_init("secret", async { Err::<(), _>("token=hunter2".to_owned()) }).await;
 
     assert_eq!(ready, Ok(7));
     assert_eq!(failed, Err("token=hunter2".to_owned()));
@@ -141,7 +141,7 @@ async fn startup_logs_its_component_duration_and_outcome_and_returns_the_result(
 #[test]
 fn an_invocation_span_carries_the_operation_and_the_request_id() {
     let (recorder, subscriber) = recording();
-    let invocation = Invocation::new("request-1", Deadline::in_from_now(Duration::from_secs(5)));
+    let invocation = Invocation::new("request-1", Deadline::after(Duration::from_secs(5)));
     let span =
         tracing::subscriber::with_default(subscriber, || invocation_span("orders", &invocation));
 

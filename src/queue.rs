@@ -56,7 +56,7 @@ impl Delivery {
     /// How many times SQS has delivered this message, from
     /// `ApproximateReceiveCount`.
     ///
-    /// Returns `1` when the attribute is absent or unparseable: an unknown
+    /// Returns `1` when the attribute is absent or unparsable: an unknown
     /// count reads as a first attempt, never as an exhausted one.
     pub fn receive_count(&self) -> u32 {
         self.attributes
@@ -199,7 +199,7 @@ where
         .with_margin(std::time::Duration::from_millis(100));
     let mut records = batch.records.into_iter();
     for delivery in records.by_ref() {
-        if deadline.expired() {
+        if deadline.is_expired() {
             response.fail(delivery.message_id);
             break;
         }

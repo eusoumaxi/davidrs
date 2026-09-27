@@ -466,9 +466,9 @@ fn derive(
 }
 
 /// The headers the transport sets itself, so no argument may set them: the
-/// caller's token and the representation, and the ones that name the host
-/// or frame the body, which an argument would otherwise point at another
-/// virtual host or corrupt the request.
+/// caller's token, the representation, and the headers that name the host or
+/// frame the body, through which an argument could point the request at
+/// another virtual host or corrupt it.
 const TRANSPORT_HEADERS: [&str; 6] = [
     "accept",
     "content-type",

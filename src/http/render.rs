@@ -26,7 +26,11 @@ use super::response::{apply_headers, HttpResponse};
 /// impl ErrorRenderer for TextErrors {
 ///     fn render(&self, failure: &Failure) -> HttpResponse {
 ///         let body = format!("{}: {}", failure.code(), failure.public_message());
-///         literal(failure.status(), "text/plain", body)
+///         let mut response = literal(failure.status(), "text/plain", body);
+///         for (name, value) in failure.headers() {
+///             response.headers_mut().insert(name.clone(), value.clone());
+///         }
+///         response
 ///     }
 /// }
 /// ```

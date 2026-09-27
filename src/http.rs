@@ -6,7 +6,7 @@
 //! API and Function URL events are read by default; REST API events
 //! need the `apigw-rest` feature.
 //!
-//! # Example
+//! # Examples
 //!
 //! ```no_run
 //! use std::sync::Arc;

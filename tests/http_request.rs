@@ -242,7 +242,7 @@ fn a_body_declared_as_another_media_type_is_a_415() {
 fn a_body_over_the_limit_is_a_413_with_the_limit_in_the_detail() {
     let native = text(&format!("{{\"name\":\"{}\"}}", "x".repeat(200)));
     let failure = Request::new(&native)
-        .json_limited::<Item>(64)
+        .json_bounded::<Item>(64)
         .expect_err("413");
     assert_eq!(failure.status(), StatusCode::PAYLOAD_TOO_LARGE);
     assert_eq!(failure.code(), codes::BODY_TOO_LARGE);
@@ -252,16 +252,16 @@ fn a_body_over_the_limit_is_a_413_with_the_limit_in_the_detail() {
 #[test]
 fn a_body_exactly_at_the_limit_is_accepted() {
     let native = text(r#"{"a":1}"#);
-    let value: serde_json::Value = Request::new(&native).json_limited(7).expect("at the limit");
+    let value: serde_json::Value = Request::new(&native).json_bounded(7).expect("at the limit");
     assert_eq!(value["a"], 1);
 }
 
 #[test]
-fn json_limited_cannot_raise_the_request_limit() {
+fn json_bounded_cannot_raise_the_request_limit() {
     let native = text(r#"{"a":1}"#);
     let failure = Request::new(&native)
         .with_body_limit(4)
-        .json_limited::<serde_json::Value>(1024)
+        .json_bounded::<serde_json::Value>(1024)
         .expect_err("413");
     assert_eq!(failure.status(), StatusCode::PAYLOAD_TOO_LARGE);
 }

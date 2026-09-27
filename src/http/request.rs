@@ -176,7 +176,7 @@ impl<'a> Request<'a> {
     /// declares a media type other than JSON, and a `400` when it is empty or
     /// malformed.
     pub fn json<T: DeserializeOwned>(&self) -> Result<T, Failure> {
-        self.json_limited(self.body_limit)
+        self.json_bounded(self.body_limit)
     }
 
     /// Deserializes a JSON body under a tighter byte limit.
@@ -190,7 +190,7 @@ impl<'a> Request<'a> {
     /// Returns a `413` when the body exceeds the limit, a `415` when it
     /// declares a media type other than JSON, and a `400` when it is empty or
     /// malformed.
-    pub fn json_limited<T: DeserializeOwned>(&self, limit: usize) -> Result<T, Failure> {
+    pub fn json_bounded<T: DeserializeOwned>(&self, limit: usize) -> Result<T, Failure> {
         self.with_body_limit(limit.min(self.body_limit))
             .check_body_limit()?;
         self.check_json_media_type()?;

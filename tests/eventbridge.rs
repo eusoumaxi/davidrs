@@ -2,7 +2,7 @@
 //!
 //! The fake service sees each `PutEvents` body and answers with per-entry
 //! results, so accepted, rejected and unknown outcomes are all exercised.
-#![cfg(feature = "events")]
+#![cfg(feature = "eventbridge")]
 
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -14,7 +14,7 @@ use aws_sdk_eventbridge::config::{
 };
 use aws_sdk_eventbridge::Client;
 use aws_smithy_http_client::test_util::{infallible_client_fn, NeverClient};
-use davidrs::events::{self, EntryOutcome, EventRoute};
+use davidrs::eventbridge::{self, EntryOutcome, EventRoute};
 use davidrs::{Deadline, RuntimeError};
 use serde_json::{json, Value};
 
@@ -67,7 +67,7 @@ fn eventbridge(
 }
 
 fn live() -> Deadline {
-    Deadline::in_from_now(Duration::from_secs(30))
+    Deadline::after(Duration::from_secs(30))
 }
 
 fn order(id: u32) -> Value {
@@ -82,7 +82,7 @@ async fn every_accepted_entry_reports_its_event_id() {
             json!({ "FailedEntryCount": 0, "Entries": [{ "EventId": "e-1" }, { "EventId": "e-2" }] }),
         )
     });
-    let outcome = events::publish_batch(
+    let outcome = eventbridge::publish_batch(
         &client,
         "orders-bus",
         &ORDER_CREATED,
@@ -99,7 +99,7 @@ async fn every_accepted_entry_reports_its_event_id() {
         ]
     );
     assert!(outcome.all_accepted());
-    assert!(outcome.failed_indexes().is_empty());
+    assert!(outcome.failed_indices().is_empty());
     let entry = &bodies.lock().expect("log")[0]["Entries"][1];
     assert_eq!(entry["EventBusName"], "orders-bus");
     assert_eq!(entry["Source"], "example.orders");
@@ -109,7 +109,7 @@ async fn every_accepted_entry_reports_its_event_id() {
 #[tokio::test]
 async fn a_detail_is_sent_as_its_json_text() {
     let (client, bodies) = eventbridge(|_| (200, json!({ "Entries": [{ "EventId": "e-1" }] })));
-    let outcome = events::publish(&client, "orders-bus", &ORDER_CREATED, &order(7), live())
+    let outcome = eventbridge::publish(&client, "orders-bus", &ORDER_CREATED, &order(7), live())
         .await
         .expect("publish");
     assert!(outcome.all_accepted());
@@ -133,7 +133,7 @@ async fn a_rejected_entry_reports_its_code_and_message() {
             }),
         )
     });
-    let outcome = events::publish_batch(
+    let outcome = eventbridge::publish_batch(
         &client,
         "orders-bus",
         &ORDER_CREATED,
@@ -150,13 +150,13 @@ async fn a_rejected_entry_reports_its_code_and_message() {
         }
     );
     assert!(!outcome.all_accepted());
-    assert_eq!(outcome.failed_indexes(), vec![1]);
+    assert_eq!(outcome.failed_indices(), vec![1]);
 }
 
 #[tokio::test]
 async fn entries_the_service_does_not_account_for_are_unknown() {
     let (client, _bodies) = eventbridge(|_| (200, json!({ "Entries": [{}] })));
-    let outcome = events::publish_batch(
+    let outcome = eventbridge::publish_batch(
         &client,
         "orders-bus",
         &ORDER_CREATED,
@@ -170,14 +170,14 @@ async fn entries_the_service_does_not_account_for_are_unknown() {
         vec![EntryOutcome::Unknown, EntryOutcome::Unknown]
     );
     assert!(!EntryOutcome::Unknown.is_accepted());
-    assert_eq!(outcome.failed_indexes(), vec![0, 1]);
+    assert_eq!(outcome.failed_indices(), vec![0, 1]);
 }
 
 #[tokio::test]
 async fn a_call_that_misses_its_deadline_leaves_every_entry_unknown() {
     let client = client_over(NeverClient::new());
-    let deadline = Deadline::in_from_now(Duration::from_millis(50));
-    let outcome = events::publish_batch(
+    let deadline = Deadline::after(Duration::from_millis(50));
+    let outcome = eventbridge::publish_batch(
         &client,
         "orders-bus",
         &ORDER_CREATED,
@@ -200,7 +200,7 @@ async fn a_failed_call_is_an_error_naming_the_bus() {
             json!({ "__type": "ResourceNotFoundException", "message": "no such bus" }),
         )
     });
-    let failure = events::publish(&client, "orders-bus", &ORDER_CREATED, &order(1), live())
+    let failure = eventbridge::publish(&client, "orders-bus", &ORDER_CREATED, &order(1), live())
         .await
         .expect_err("fails");
     assert_eq!(failure.to_string(), "publishing to orders-bus");
@@ -209,10 +209,11 @@ async fn a_failed_call_is_an_error_naming_the_bus() {
 #[tokio::test]
 async fn more_entries_than_one_call_takes_are_refused_before_any_call() {
     let (client, bodies) = eventbridge(|_| (200, json!({})));
-    let details: Vec<Value> = (0..=events::MAX_ENTRIES as u32).map(order).collect();
-    let failure = events::publish_batch(&client, "orders-bus", &ORDER_CREATED, &details, live())
-        .await
-        .expect_err("too many");
+    let details: Vec<Value> = (0..=eventbridge::MAX_ENTRIES as u32).map(order).collect();
+    let failure =
+        eventbridge::publish_batch(&client, "orders-bus", &ORDER_CREATED, &details, live())
+            .await
+            .expect_err("too many");
     assert!(matches!(
         failure,
         RuntimeError::LimitExceeded {
@@ -227,7 +228,7 @@ async fn more_entries_than_one_call_takes_are_refused_before_any_call() {
 async fn an_empty_batch_makes_no_call() {
     let (client, bodies) = eventbridge(|_| (200, json!({})));
     let outcome =
-        events::publish_batch::<Value>(&client, "orders-bus", &ORDER_CREATED, &[], live())
+        eventbridge::publish_batch::<Value>(&client, "orders-bus", &ORDER_CREATED, &[], live())
             .await
             .expect("publish");
     assert!(outcome.entries.is_empty());
@@ -238,7 +239,7 @@ async fn an_empty_batch_makes_no_call() {
 async fn a_detail_that_cannot_be_serialized_is_an_error() {
     let (client, bodies) = eventbridge(|_| (200, json!({})));
     let detail = BTreeMap::from([(vec![1_u8], 1)]);
-    let failure = events::publish(&client, "orders-bus", &ORDER_CREATED, &detail, live())
+    let failure = eventbridge::publish(&client, "orders-bus", &ORDER_CREATED, &detail, live())
         .await
         .expect_err("not JSON");
     assert_eq!(failure.to_string(), "serializing an event detail");

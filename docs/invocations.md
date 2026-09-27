@@ -21,7 +21,7 @@ async fn fetch_price(_attempt: u32) -> Result<u32, String> {
 
 # #[tokio::main(flavor = "current_thread")]
 # async fn main() -> Result<(), RuntimeError> {
-let invocation = Deadline::in_from_now(Duration::from_secs(10));
+let invocation = Deadline::after(Duration::from_secs(10));
 let work = invocation.with_margin(Duration::from_millis(500));
 let mut price = None;
 for attempt in 0..3 {
@@ -69,7 +69,7 @@ fn describe(context: &Context<()>) -> String {
     )
 }
 
-let invocation = Invocation::new("r-1", Deadline::in_from_now(Duration::from_secs(3)))
+let invocation = Invocation::new("r-1", Deadline::after(Duration::from_secs(3)))
     .with_trace_id(Some("Root=1-abc;Parent=def;Sampled=1".to_owned()));
 let context = Context::new(invocation, ());
 assert!(describe(&context).starts_with("request r-1 (trace 1-abc)"));
@@ -82,10 +82,7 @@ assert!(describe(&context).starts_with("request r-1 (trace 1-abc)"));
 - Measuring a long poll from [`started`](crate::Invocation::started) rather than from when the handler began.
 - Building a context by hand in a unit test (see the `test_support` feature).
 
-**What it does not do.** The invocation does not carry the rest of the native
-context (client context, identity pool). `Context` does not vouch for its
-scope: the scope's own type does. Keep a scope's fields private, and only your
-policy can build one.
+**What it does not do.** The invocation does not carry the rest of the native context (client context, identity pool). `Context` does not vouch for its scope: the scope's own type does. Keep a scope's fields private, and only your policy can build one.
 
 ## RuntimeError and error_chain
 

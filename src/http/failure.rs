@@ -6,7 +6,8 @@
 //! diagnostics. A 5xx also replaces its public message with
 //! [`INTERNAL_MESSAGE`], because a server-side message is so often an upstream
 //! error that reached the constructor by accident. No constructor can leak:
-//! `Failure::new(500, code, sdk_error.to_string())` renders the fixed string.
+//! `Failure::new(StatusCode::INTERNAL_SERVER_ERROR, code, sdk_error.to_string())`
+//! renders the fixed string.
 
 use std::fmt;
 
@@ -66,6 +67,7 @@ impl Failure {
     ///
     /// A 5xx status discards `message` at render time; put anything
     /// diagnostic in [`Failure::with_detail`] instead of the message.
+    #[must_use]
     pub fn new(status: StatusCode, code: &'static str, message: impl Into<String>) -> Self {
         Self {
             status,
@@ -78,6 +80,7 @@ impl Failure {
     }
 
     /// A `500` whose detail is kept for diagnostics and never rendered.
+    #[must_use]
     pub fn internal(code: &'static str, detail: impl Into<String>) -> Self {
         Self {
             status: StatusCode::INTERNAL_SERVER_ERROR,
@@ -91,6 +94,7 @@ impl Failure {
 
     /// A `500` built from an error, keeping its whole `source` chain as the
     /// detail.
+    #[must_use]
     pub fn from_error(code: &'static str, error: &dyn std::error::Error) -> Self {
         Self::internal(code, crate::error::chain(error))
     }

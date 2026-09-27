@@ -61,8 +61,8 @@ impl Reply {
         }
     }
 
-    /// A JSON-RPC error response; `id` is absent when the request's could not
-    /// be read.
+    /// A JSON-RPC error response; `id` is absent when the request's own id
+    /// could not be read.
     pub(super) fn error(
         status: StatusCode,
         id: Option<Value>,

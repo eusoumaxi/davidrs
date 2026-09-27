@@ -32,7 +32,7 @@ The invocation runs in a fixed order:
 
 **What it is.** The native loop over any typed payload: `In` is deserialized from the invocation, `Out` is serialized as the response.
 
-**Why it exists.** The plain `lambda_runtime` loop hands a handler the native context and no budget. `runtime::run` gives it the same [`Invocation`](crate::Invocation) and [`Deadline`](crate::Deadline) every other adapter gives, and turns an overrun into an invocation error instead of a process Lambda has to stop.
+**Why it exists.** The plain `lambda_runtime` loop hands a handler the native context, whose deadline is epoch milliseconds that nothing enforces. `runtime::run` gives it the same [`Invocation`](crate::Invocation) and [`Deadline`](crate::Deadline) every other adapter gives, and turns an overrun into an invocation error instead of a process Lambda has to stop.
 
 **How to use it.**
 
@@ -77,7 +77,7 @@ async fn main() -> Result<(), RuntimeError> {
 
 - A function another service calls with the SDK's `Invoke` and reads the answer of.
 - A task in a workflow engine, whose output feeds the next step.
-- A trigger with no adapter here (a stream, a notification service), read into your own type or into [`serde_json::Value`].
+- A trigger with no adapter here (S3, SNS, a Kinesis or DynamoDB stream), read into your own type, a type from the `aws_lambda_events` crate, or [`serde_json::Value`].
 
 **What it does not do.** No partial-batch reporting (use [`queue::run`](crate::queue::run)), no HTTP pipeline (use [`http::Api`](crate::http::Api)) and no streamed response (use [`streaming::run`](crate::streaming::run)). The handler's `Context` has no scope: authorizing a direct caller is IAM's job.
 
@@ -85,7 +85,7 @@ async fn main() -> Result<(), RuntimeError> {
 
 **What it is.** A consumer of one EventBridge event per invocation. [`Event<T>`](crate::event::Event) is the envelope — `id`, `source`, `detail-type`, `time` — with the `detail` deserialized into your `T`.
 
-**Why it exists.** Consumers written against `serde_json::Value` index into `detail` by string and find out at runtime that a publisher renamed a field. With a typed `detail`, an event that no longer matches is an invocation error the rule's retry policy and dead-letter queue see, and the handler only ever sees events it understands.
+**Why it exists.** Consumers written against `serde_json::Value` index into `detail` by string and find out at runtime that a publisher renamed a field. With a typed `detail`, an event that no longer matches is an invocation error, which Lambda's asynchronous retries and the function's on-failure destination or dead-letter queue act on, and the handler only ever sees events it understands.
 
 **How to use it.**
 
@@ -144,7 +144,7 @@ let event: Event<OrderShipped> = serde_json::from_value(serde_json::json!({
     "detail": { "order_id": "o-1" }
 }))
 .expect("an EventBridge envelope");
-let invocation = Invocation::new("r-1", Deadline::in_from_now(Duration::from_secs(5)));
+let invocation = Invocation::new("r-1", Deadline::after(Duration::from_secs(5)));
 assert!(on_shipped(Arc::new(()), event, Context::new(invocation, ())).await.is_ok());
 # }
 ```
@@ -155,13 +155,13 @@ assert!(on_shipped(Arc::new(()), event, Context::new(invocation, ())).await.is_o
 - Keeping a read model or a search index in step with its source.
 - Fanning one event out to work that must not block its publisher.
 
-**What it does not do.** It receives only: publishing is the `events` feature, so a consumer does not link a client it never calls. One invocation is one event — EventBridge does not batch. There is no deduplication: EventBridge delivers at least once, so a handler with side effects keys them by [`Event::id`](crate::event::Event::id) or makes them idempotent.
+**What it does not do.** It receives only: publishing is the `eventbridge` feature, so a consumer does not link a client it never calls. One invocation is one event — EventBridge does not batch. There is no deduplication: EventBridge delivers at least once, so a handler with side effects keys them by [`Event::id`](crate::event::Event::id) or makes them idempotent.
 
 ## Schedules: `schedule::run`
 
 **What it is.** A scheduled handler over the payload the schedule is configured with, deserialized into your type. Use `()` for a schedule with no payload and [`serde_json::Value`] to accept anything.
 
-**Why it exists.** A schedule's payload is written once, in infrastructure code, and rarely looked at again. When it drifts from what the handler expects, an untyped handler quietly takes a default branch every night. Typed, the mismatch fails the invocation, and the schedule's retry policy and dead-letter queue report it.
+**Why it exists.** A schedule's payload is written once, in infrastructure code, and rarely looked at again. When it drifts from what the handler expects, an untyped handler quietly takes a default branch every night. Typed, the mismatch fails the invocation, and Lambda's asynchronous retries and the function's on-failure destination or dead-letter queue report it.
 
 **How to use it.**
 

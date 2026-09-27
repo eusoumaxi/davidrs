@@ -1,7 +1,7 @@
-//! A toolkit for AWS Lambda functions in Rust: fast, small and correct by
+//! A framework for AWS Lambda functions in Rust: fast, small and correct by
 //! default, so the code you write is the business logic.
 //!
-//! `davidrs` is a thin wrapper over the official wrappers: it keeps
+//! `davidrs` is a thin layer over the official runtime crates: it keeps
 //! [`lambda_runtime`]/[`lambda_http`] and the AWS SDK as the transport, adds
 //! nothing at run time but a microsecond of pipeline per request, and owns
 //! what every function otherwise rewrites — and usually gets subtly wrong —
@@ -10,11 +10,12 @@
 //! - **One absolute deadline per invocation.** [`Deadline`] is a monotonic
 //!   instant; child budgets cannot outlive their parent, and every adapter
 //!   keeps a cleanup margin before Lambda's own timeout.
-//! - **One ordered pipeline per trigger.** HTTP ([`http::Api`] buffered,
-//!   [`http::stream::StreamApi`] streamed), SQS ([`queue`]), EventBridge
-//!   ([`event`]), schedules ([`schedule`]) and direct invocations
-//!   ([`runtime`]) each run admission, decoding, authorization and the handler
-//!   in a fixed order, and every failure reaches one renderer.
+//! - **One ordered pipeline per trigger.** HTTP requests ([`http::Api`]
+//!   buffered, [`http::stream::StreamApi`] streamed) run admission, decoding,
+//!   authorization and the handler in a fixed order, and every failure
+//!   reaches one error renderer. SQS ([`queue`]), EventBridge ([`event`]),
+//!   schedules ([`schedule`]) and direct invocations ([`runtime`]) decode
+//!   their payload before the handler and report its failures to Lambda.
 //! - **Failures that cannot leak.** A [`http::Failure`] carries a public
 //!   message and a separate internal detail; any 5xx renders a fixed string no
 //!   matter how it was built.
@@ -51,8 +52,8 @@
 //! | `queue`, `queue-visibility` | [`queue`]: SQS partial-batch processing, visibility changes |
 //! | `event`, `schedule` | [`event`], [`schedule`]: typed EventBridge and scheduled payloads |
 //! | `aws` | [`aws::sdk_config`]: SDK configuration from the Lambda environment |
-//! | `dynamo` | [`table`]: bounded DynamoDB reads and writes, cursors, spans |
-//! | `events` | [`events`]: EventBridge publishing with per-entry outcomes |
+//! | `dynamo` | [`dynamo`]: bounded DynamoDB reads and writes, cursors, spans |
+//! | `eventbridge` | [`eventbridge`]: EventBridge publishing with per-entry outcomes |
 //! | `secrets` | [`secrets`]: typed Secrets Manager reads that never echo a value |
 //! | `client` | [`client`]: an outbound `reqwest` client with byte and time limits |
 //! | `auth` | [`auth`]: RS256 / JWKS token verification with a bounded refresh |
@@ -90,10 +91,12 @@ pub mod client;
 pub mod compression;
 #[cfg(feature = "digest")]
 pub mod digest;
+#[cfg(feature = "dynamo")]
+pub mod dynamo;
 #[cfg(feature = "event")]
 pub mod event;
-#[cfg(feature = "events")]
-pub mod events;
+#[cfg(feature = "eventbridge")]
+pub mod eventbridge;
 #[cfg(feature = "http")]
 pub mod http;
 #[cfg(feature = "mcp")]
@@ -108,8 +111,6 @@ pub mod schedule;
 pub mod secrets;
 #[cfg(feature = "streaming")]
 pub mod streaming;
-#[cfg(feature = "dynamo")]
-pub mod table;
 #[cfg(any(feature = "logs", feature = "metrics", feature = "otel"))]
 pub mod telemetry;
 #[cfg(feature = "test-support")]
