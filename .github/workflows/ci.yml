@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: Rules, format, clippy, docs, package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - run: scripts/check.sh rules
+      - run: scripts/check.sh lint
+      - run: scripts/check.sh docs
+      - run: scripts/check.sh package
+
+  test:
+    name: Tests, all features
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - run: scripts/check.sh test
+
+  list-features:
+    name: List features
+    runs-on: ubuntu-latest
+    outputs:
+      features: ${{ steps.list.outputs.features }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        run: echo "features=$(scripts/check.sh list-features | jq -R . | jq -cs .)" >> "$GITHUB_OUTPUT"
+
+  feature:
+    name: Feature ${{ matrix.feature }} alone
+    needs: list-features
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        feature: ${{ fromJSON(needs.list-features.outputs.features) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.feature }}
+      - run: scripts/check.sh feature ${{ matrix.feature }}
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - run: rustup component add llvm-tools-preview
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      - run: scripts/check.sh coverage
+
+  deny:
+    name: Dependency policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+      - run: scripts/check.sh deny

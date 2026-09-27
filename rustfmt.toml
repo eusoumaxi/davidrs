@@ -1,0 +1,2 @@
+# Standard-width Rust keeps signatures, error paths and startup code readable.
+max_width = 100

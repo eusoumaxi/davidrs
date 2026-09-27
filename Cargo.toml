@@ -1,0 +1,305 @@
+[package]
+name = "davidrs"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.98.1"
+description = "A small, feature-gated framework for AWS Lambda services: one ordered pipeline per trigger, absolute invocation deadlines, bounded work and failures that cannot leak."
+repository = "https://github.com/eusoumaxi/davidrs"
+homepage = "https://eusoumaxi.github.io/davidrs/"
+documentation = "https://docs.rs/davidrs"
+license = "MIT OR Apache-2.0"
+keywords = ["lambda", "aws", "serverless", "http"]
+categories = ["web-programming", "asynchronous"]
+readme = "README.md"
+exclude = ["/.github", "/AGENTS.md", "/scripts", "/target"]
+
+[package.metadata.docs.rs]
+# docs.rs builds the reference and the guide with every capability.
+all-features = true
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+unused_must_use = "deny"
+missing_debug_implementations = "deny"
+unreachable_pub = "warn"
+
+[lints.rustdoc]
+broken_intra_doc_links = "warn"
+private_intra_doc_links = "warn"
+bare_urls = "warn"
+
+[lints.clippy]
+all = "deny"
+
+[dependencies]
+# --- always on: the empty crate is value types only -------------------------
+thiserror = "2"
+
+# --- runtime ---------------------------------------------------------------
+lambda_runtime = { version = "1.4", optional = true }
+tokio = { version = "1", default-features = false, features = [
+  "rt",
+  "time",
+  "macros",
+], optional = true }
+
+# --- http ------------------------------------------------------------------
+lambda_http = { version = "1.3", default-features = false, features = [
+  "apigw_http",
+], optional = true }
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+serde_urlencoded = { version = "0.7", optional = true }
+
+# --- streaming / queue -----------------------------------------------------
+bytes = { version = "1", optional = true }
+futures-util = { version = "0.3", default-features = false, features = [
+  "std",
+], optional = true }
+tokio-util = { version = "0.7", default-features = false, optional = true }
+http-body = { version = "1", optional = true }
+http-body-util = { version = "0.1", optional = true }
+
+# --- aws -------------------------------------------------------------------
+aws-types = { version = "1", optional = true }
+aws-credential-types = { version = "1", optional = true }
+aws-smithy-http-client = { version = "1", default-features = false, features = [
+  "rustls-ring",
+], optional = true }
+aws-smithy-runtime-api = { version = "1", optional = true }
+# The SDK's retries, timeouts and stalled-stream protection need a timer.
+aws-smithy-async = { version = "1", features = ["rt-tokio"], optional = true }
+
+# --- service clients (each behind its own feature) -------------------------
+aws-sdk-dynamodb = { version = "1", default-features = false, optional = true }
+aws-sdk-eventbridge = { version = "1", default-features = false, optional = true }
+aws-sdk-secretsmanager = { version = "1", default-features = false, optional = true }
+aws-sdk-sqs = { version = "1", default-features = false, optional = true }
+serde_dynamo = { version = "4", optional = true, features = [
+  "aws-sdk-dynamodb+1",
+] }
+
+# --- outbound http / auth --------------------------------------------------
+reqwest = { version = "0.13", default-features = false, features = [
+  "rustls-no-provider",
+  "json",
+  "query",
+  "stream",
+], optional = true }
+# The Mozilla root certificates, compiled in: the TLS client is configured
+# with them explicitly, so no certificate store is read at cold start.
+webpki-roots = { version = "1", optional = true }
+rustls = { version = "0.23", default-features = false, features = [
+  "ring",
+  "std",
+  "tls12",
+], optional = true }
+base64 = { version = "0.23", optional = true }
+ring = { version = "0.17", optional = true }
+
+# --- compression -----------------------------------------------------------
+flate2 = { version = "1", optional = true }
+
+# --- validation / problem details -----------------------------------------
+# garde defaults pull regex, idna, phonenumber and card-validate; the derive
+# is the only part this crate exposes.
+garde = { version = "0.23", default-features = false, features = [
+  "derive",
+], optional = true }
+# `serde` only: `json` would add serde_json duplication and `axum`/`actix`
+# would pull whole web frameworks.
+problem_details = { version = "0.10", default-features = false, features = [
+  "serde",
+], optional = true }
+
+# --- cache -----------------------------------------------------------------
+moka = { version = "0.12", default-features = false, features = [
+  "future",
+], optional = true }
+
+# --- telemetry -------------------------------------------------------------
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+  "fmt",
+  "registry",
+], optional = true }
+opentelemetry = { version = "0.33", default-features = false, features = [
+  "trace",
+], optional = true }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = [
+  "trace",
+], optional = true }
+opentelemetry-aws = { version = "0.21", default-features = false, features = [
+  "trace",
+  "detector-aws-lambda",
+], optional = true }
+opentelemetry-proto = { version = "0.33", default-features = false, features = [
+  "gen-tonic-messages",
+  "trace",
+], optional = true }
+prost = { version = "0.14", optional = true }
+tracing-opentelemetry = { version = "0.34", default-features = false, optional = true }
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = [
+  "rt-multi-thread",
+  "macros",
+  "time",
+  "sync",
+  "net",
+  "io-util",
+] }
+# A local HTTP/1.1 server for the tests: the Lambda Runtime API, a JWKS
+# endpoint, an upstream for the outbound client.
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+# Answers AWS SDK calls in-process, so the AWS helpers are tested offline.
+aws-smithy-http-client = { version = "1", default-features = false, features = [
+  "test-util",
+] }
+aws-smithy-types = "1"
+
+[features]
+default = []
+
+# Internal: `Deadline::run` needs a timer. Enabled by every feature that awaits
+# under a budget. Not part of the public feature contract.
+_time = ["dep:tokio", "tokio/time"]
+
+runtime = ["_time", "dep:lambda_runtime", "dep:serde", "dep:serde_json"]
+http = ["runtime", "dep:lambda_http", "dep:serde_urlencoded", "dep:bytes"]
+# Streamed HTTP responses (Function URL `RESPONSE_STREAM`, REST API `STREAM`):
+# JSON or server-sent events from one handler, with CORS and negotiation.
+http-stream = ["http", "streaming", "dep:http-body", "dep:http-body-util"]
+# REST API (v1) proxy events next to HTTP API (v2). The request facade reads
+# the caller address from either context.
+apigw-rest = ["http", "lambda_http/apigw_rest"]
+streaming = [
+  "runtime",
+  "dep:bytes",
+  "dep:futures-util",
+  "dep:tokio-util",
+  "tokio/sync",
+  "tokio-util/rt",
+  "lambda_runtime/tracing",
+]
+queue = ["runtime", "dep:serde", "dep:serde_json"]
+queue-visibility = ["queue", "aws", "dep:aws-sdk-sqs"]
+event = ["runtime", "dep:serde", "dep:serde_json"]
+schedule = ["runtime", "dep:serde", "dep:serde_json"]
+
+aws = [
+  "_time",
+  "dep:aws-smithy-async",
+  "dep:aws-types",
+  "dep:aws-credential-types",
+  "dep:aws-smithy-http-client",
+  "dep:aws-smithy-runtime-api",
+]
+client = [
+  "dep:reqwest",
+  "dep:webpki-roots",
+  "dep:rustls",
+  "dep:bytes",
+  "dep:futures-util",
+  "dep:serde",
+  "dep:serde_json",
+]
+auth = [
+  "client",
+  "dep:base64",
+  "dep:ring",
+  "dep:serde",
+  "dep:serde_json",
+  "tokio/sync",
+]
+dynamo = [
+  "_time",
+  "aws",
+  "dep:aws-sdk-dynamodb",
+  "dep:serde_dynamo",
+  "dep:serde",
+  "dep:serde_json",
+  "dep:base64",
+  "dep:ring",
+  "dep:tracing",
+]
+compression = ["dep:flate2"]
+digest = ["dep:ring"]
+events = [
+  "_time",
+  "aws",
+  "dep:aws-sdk-eventbridge",
+  "dep:serde",
+  "dep:serde_json",
+]
+secrets = ["aws", "dep:aws-sdk-secretsmanager", "dep:serde", "dep:serde_json"]
+cache = ["dep:moka"]
+validate = ["http", "dep:garde"]
+problem = ["http", "dep:problem_details"]
+
+logs = ["dep:tracing", "dep:tracing-subscriber"]
+metrics = ["dep:serde", "dep:serde_json"]
+otel = [
+  "logs",
+  "dep:opentelemetry",
+  "dep:opentelemetry_sdk",
+  "dep:opentelemetry-aws",
+  "dep:opentelemetry-proto",
+  "dep:prost",
+  "dep:tracing-opentelemetry",
+  "dep:base64",
+  "lambda_runtime?/opentelemetry",
+]
+test-support = ["dep:serde_json"]
+# An MCP server on the buffered pipeline, with hand-written tools. `base64`
+# decodes the header values clients send in base64.
+mcp = ["http", "dep:base64"]
+# Tools from an OpenAPI document, each call one outbound request. Separate so
+# a server without it links no outbound HTTP client.
+mcp-openapi = ["mcp", "client"]
+
+[[example]]
+name = "http"
+required-features = ["http"]
+
+[[example]]
+name = "validated"
+required-features = ["validate", "problem"]
+
+[[example]]
+name = "custom_policy"
+required-features = ["http"]
+
+[[example]]
+name = "queue"
+required-features = ["queue", "logs"]
+
+[[example]]
+name = "schedule"
+required-features = ["schedule", "logs"]
+
+[[example]]
+name = "event"
+required-features = ["event", "logs"]
+
+[[example]]
+name = "streaming"
+required-features = ["streaming"]
+
+[[example]]
+name = "stream_http"
+required-features = ["http-stream", "logs"]
+
+[[example]]
+name = "table"
+required-features = ["http", "dynamo", "logs"]
+
+[[example]]
+name = "mcp"
+required-features = ["mcp-openapi"]
