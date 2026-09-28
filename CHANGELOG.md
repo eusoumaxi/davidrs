@@ -14,6 +14,14 @@ version may change the public API, and its entry says how.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
 
+### Fixed
+
+- AWS SDK configuration re-reads the execution-role credentials from the
+  environment on each resolution, so a warm Lambda picks up a rotated session
+  instead of keeping the cold-start snapshot and signing with the rotated-out
+  key. `AWS_CREDENTIAL_EXPIRATION` is now parsed when present, giving the
+  SDK's lazy cache a real staleness signal.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.

@@ -30,24 +30,24 @@ fn lambda_environment(session_token: Option<&str>) -> MutexGuard<'static, ()> {
     guard
 }
 
+/// The provider re-reads the environment when `provide_credentials` is called,
+/// so the lock is held for that call and released before the await; reverting
+/// to a single `provide_credentials().await` chain would race the env read
+/// against the other env-mutating tests in this file.
 #[tokio::test]
 async fn the_configuration_takes_credentials_and_region_from_the_environment() {
-    let config = {
-        let _environment = lambda_environment(Some("token-example"));
-        sdk_config(Trust::NativeRoots).expect("config")
-    };
+    let _environment = lambda_environment(Some("token-example"));
+    let config = sdk_config(Trust::NativeRoots).expect("config");
     assert_eq!(
         config.region().map(ToString::to_string).as_deref(),
         Some("eu-west-1")
     );
     assert!(config.http_client().is_some());
     assert!(config.behavior_version().is_some());
-    let credentials = config
-        .credentials_provider()
-        .expect("credentials")
-        .provide_credentials()
-        .await
-        .expect("credentials");
+    let provider = config.credentials_provider().expect("credentials");
+    let credentials_future = provider.provide_credentials();
+    drop(_environment);
+    let credentials = credentials_future.await.expect("credentials");
     assert_eq!(credentials.access_key_id(), "AKIDEXAMPLE");
     assert_eq!(credentials.secret_access_key(), "secret-example");
     assert_eq!(credentials.session_token(), Some("token-example"));
@@ -55,16 +55,12 @@ async fn the_configuration_takes_credentials_and_region_from_the_environment() {
 
 #[tokio::test]
 async fn a_session_token_is_optional() {
-    let config = {
-        let _environment = lambda_environment(None);
-        sdk_config(Trust::NativeRoots).expect("config")
-    };
-    let credentials = config
-        .credentials_provider()
-        .expect("credentials")
-        .provide_credentials()
-        .await
-        .expect("credentials");
+    let _environment = lambda_environment(None);
+    let config = sdk_config(Trust::NativeRoots).expect("config");
+    let provider = config.credentials_provider().expect("credentials");
+    let credentials_future = provider.provide_credentials();
+    drop(_environment);
+    let credentials = credentials_future.await.expect("credentials");
     assert_eq!(credentials.session_token(), None);
 }
 
@@ -94,15 +90,15 @@ fn a_missing_variable_is_a_configuration_error_naming_it() {
 
 #[tokio::test]
 async fn the_configuration_carries_the_timer_sdk_retries_need() {
-    let config = {
-        let _environment = lambda_environment(None);
-        sdk_config(Trust::NativeRoots).expect("config")
-    };
+    let _environment = lambda_environment(None);
+    let config = sdk_config(Trust::NativeRoots).expect("config");
     assert!(config.sleep_impl().is_some());
 }
 
 /// A client built from the configuration alone — no timer supplied by the
-/// test — can be created and can call the service.
+/// test — can be created and can call the service. The in-process HTTP client
+/// returns a fixed reply regardless of the `SigV4` signature, so the assertion
+/// does not depend on which credentials the SDK resolves during the call.
 #[cfg(feature = "dynamo")]
 #[tokio::test]
 async fn a_service_client_built_from_the_configuration_works() {
