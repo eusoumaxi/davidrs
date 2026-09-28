@@ -14,6 +14,13 @@ version may change the public API, and its entry says how.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
 
+### Fixed
+
+- OpenAPI 3.1 schemas that place a keyword beside a `$ref` (such as
+  `maximum`, `enum` or `description`) now keep that sibling on the resolved
+  `inputSchema`, matching JSON Schema 2020-12 semantics where `$ref` is a
+  regular applicator; previously the sibling was dropped during inlining.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.

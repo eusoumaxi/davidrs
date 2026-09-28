@@ -515,7 +515,11 @@ fn tool_name(operation_id: &str) -> Option<String> {
 /// `node` with every local `$ref` replaced by its target.
 ///
 /// A reference already being inlined (a cycle), one that points nowhere, and
-/// every reference past the budget stay as they are.
+/// every reference past the budget stay as they are. OpenAPI 3.1 follows JSON
+/// Schema 2020-12, where `$ref` is a regular applicator and the keywords that
+/// sit beside it apply alongside the referenced subschema: those siblings are
+/// merged onto the resolved target, overriding same-named keys, and any
+/// `$ref` they hold is inlined in turn.
 fn inline(node: &Value, document: &Value, seen: &mut Vec<String>, budget: &mut usize) -> Value {
     if *budget == 0 {
         return node.clone();
@@ -538,7 +542,7 @@ fn inline(node: &Value, document: &Value, seen: &mut Vec<String>, budget: &mut u
                         seen.push(reference.to_owned());
                         let resolved = inline(target, document, seen, budget);
                         seen.pop();
-                        resolved
+                        merge_adjacent(resolved, object, document, seen, budget)
                     }
                     _ => node.clone(),
                 };
@@ -552,6 +556,28 @@ fn inline(node: &Value, document: &Value, seen: &mut Vec<String>, budget: &mut u
         }
         other => other.clone(),
     }
+}
+
+/// The keys that sat beside a `$ref` merged onto its resolved target.
+///
+/// `$ref` itself never reappears: JSON Schema 2020-12 makes it a regular
+/// applicator whose siblings apply alongside the referenced subschema, so
+/// each sibling is inlined in turn and overrides any same-named key on
+/// `resolved`. A resolved target that is not an object (a boolean schema, for
+/// example) keeps the referenced value as it stands.
+fn merge_adjacent(
+    mut resolved: Value,
+    adjacent: &Map<String, Value>,
+    document: &Value,
+    seen: &mut Vec<String>,
+    budget: &mut usize,
+) -> Value {
+    if let Value::Object(resolved) = &mut resolved {
+        for (key, value) in adjacent.iter().filter(|(key, _)| key.as_str() != "$ref") {
+            resolved.insert(key.clone(), inline(value, document, seen, budget));
+        }
+    }
+    resolved
 }
 
 /// One call: the arguments as a request, the API's answer as a value.

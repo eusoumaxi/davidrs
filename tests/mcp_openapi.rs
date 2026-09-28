@@ -657,3 +657,98 @@ async fn a_configured_header_is_sent_and_arguments_cannot_replace_it() {
     assert_eq!(values, ["service-secret"]);
     assert!(sent.header("authorization").is_none());
 }
+
+/// OpenAPI 3.1 follows JSON Schema 2020-12, where `$ref` is a regular
+/// applicator: a keyword placed beside a `$ref` applies alongside the
+/// referenced subschema, so inlining keeps it on the resolved target.
+#[tokio::test]
+async fn a_sibling_next_to_a_ref_is_merged_onto_the_resolved_schema() {
+    let document = json!({
+        "openapi": "3.1.0",
+        "paths": {
+            "/counts/{n}": {
+                "get": {
+                    "operationId": "getCount",
+                    "parameters": [{
+                        "name": "n", "in": "path", "required": true,
+                        "schema": { "$ref": "#/components/schemas/Count", "maximum": 10 }
+                    }]
+                }
+            }
+        },
+        "components": { "schemas": { "Count": { "type": "integer", "minimum": 0 } } }
+    });
+    let api = OpenApi::new(&document, "https://api.example.com", http()).expect("document");
+    let tools = tools(&mcp(api)).await;
+    let schema = &tool(&tools, "getCount")["inputSchema"]["properties"]["n"];
+    assert_eq!(
+        schema,
+        &json!({ "type": "integer", "minimum": 0, "maximum": 10 })
+    );
+}
+
+/// A sibling overrides a same-named key on the resolved subschema: the
+/// constraint the author placed beside the `$ref` wins over the referenced
+/// value, so the override is not silently dropped.
+#[tokio::test]
+async fn a_sibling_next_to_a_ref_overrides_the_same_key_on_the_target() {
+    let document = json!({
+        "openapi": "3.1.0",
+        "paths": {
+            "/counts/{n}": {
+                "get": {
+                    "operationId": "getCount",
+                    "parameters": [{
+                        "name": "n", "in": "path", "required": true,
+                        "schema": { "$ref": "#/components/schemas/Count", "maximum": 10 }
+                    }]
+                }
+            }
+        },
+        "components": { "schemas": { "Count": { "type": "integer", "minimum": 0, "maximum": 100 } } }
+    });
+    let api = OpenApi::new(&document, "https://api.example.com", http()).expect("document");
+    let tools = tools(&mcp(api)).await;
+    let n = &tool(&tools, "getCount")["inputSchema"]["properties"]["n"];
+    assert_eq!(n["maximum"], 10);
+    assert_eq!(
+        n,
+        &json!({ "type": "integer", "minimum": 0, "maximum": 10 })
+    );
+}
+
+/// A sibling that itself holds a `$ref` is inlined in turn, so every schema
+/// still stands alone after the merge.
+#[tokio::test]
+async fn a_sibling_next_to_a_ref_that_holds_a_ref_is_inlined_in_turn() {
+    let document = json!({
+        "openapi": "3.1.0",
+        "paths": {
+            "/query": {
+                "get": {
+                    "operationId": "query",
+                    "parameters": [{
+                        "name": "q", "in": "query",
+                        "schema": {
+                            "$ref": "#/components/schemas/Base",
+                            "items": { "$ref": "#/components/schemas/Id" }
+                        }
+                    }]
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "Base": { "type": "array" },
+                "Id": { "type": "string", "minLength": 1 }
+            }
+        }
+    });
+    let api = OpenApi::new(&document, "https://api.example.com", http()).expect("document");
+    let tools = tools(&mcp(api)).await;
+    let q = &tool(&tools, "query")["inputSchema"]["properties"]["q"];
+    assert_eq!(
+        q,
+        &json!({ "type": "array", "items": { "type": "string", "minLength": 1 } })
+    );
+}
