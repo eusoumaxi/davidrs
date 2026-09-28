@@ -30,7 +30,7 @@
 //!         let body = serde_json::json!({"code": code}).to_string();
 //!         let mut response = literal(failure.status(), "application/json", body);
 //!         for (name, value) in failure.headers() {
-//!             response.headers_mut().insert(name.clone(), value.clone());
+//!             response.headers_mut().append(name.clone(), value.clone());
 //!         }
 //!         response
 //!     }

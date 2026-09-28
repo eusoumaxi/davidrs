@@ -28,7 +28,7 @@ use super::response::{HttpResponse, apply_headers};
 ///         let body = format!("{}: {}", failure.code(), failure.public_message());
 ///         let mut response = literal(failure.status(), "text/plain", body);
 ///         for (name, value) in failure.headers() {
-///             response.headers_mut().insert(name.clone(), value.clone());
+///             response.headers_mut().append(name.clone(), value.clone());
 ///         }
 ///         response
 ///     }

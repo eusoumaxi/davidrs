@@ -231,7 +231,7 @@ where
                 HeaderName::try_from(name.as_str()),
                 HeaderValue::try_from(value.as_str()),
             ) {
-                response.headers_mut().insert(name, value);
+                response.headers_mut().append(name, value);
             }
         }
         Ok(response)

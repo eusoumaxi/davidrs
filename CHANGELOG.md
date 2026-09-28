@@ -14,6 +14,12 @@ version may change the public API, and its entry says how.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
 
+### Fixed
+
+- Repeated response headers attached through `Failure::with_header` or
+  returned by an `Admission::check` (notably multiple `Set-Cookie`) reach the
+  wire with every value, instead of only the last.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.
