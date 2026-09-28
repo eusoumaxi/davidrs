@@ -131,12 +131,12 @@ pub(super) fn parse(body: &[u8]) -> Result<Message, Reply> {
     let Value::Object(mut object) = value else {
         return Err(invalid(None, "A single JSON-RPC message is required"));
     };
-    let id = object.remove("id").filter(|id| !id.is_null());
+    let id = object.remove("id");
     if id
         .as_ref()
-        .is_some_and(|id| !(id.is_string() || id.is_number()))
+        .is_some_and(|id| !(id.is_string() || id.is_number() || id.is_null()))
     {
-        return Err(invalid(None, "id must be a string or a number"));
+        return Err(invalid(None, "id must be a string, a number, or null"));
     }
     if object.get("jsonrpc").and_then(Value::as_str) != Some("2.0") {
         return Err(invalid(id, "jsonrpc must be \"2.0\""));

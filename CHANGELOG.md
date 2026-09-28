@@ -14,6 +14,12 @@ version may change the public API, and its entry says how.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
 
+### Fixed
+
+- JSON-RPC requests with `id: null` are answered as requests, not
+  accepted as notifications; the reply now carries `id: null` as
+  JSON-RPC 2.0 requires.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.

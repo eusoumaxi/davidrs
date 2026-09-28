@@ -359,6 +359,60 @@ async fn a_body_that_is_not_one_request_is_an_invalid_request() {
     }
 }
 
+/// JSON-RPC 2.0 (§4.1) allows an `id` of string, number, or `null`; only the
+/// absence of an `id` member makes a Notification. An explicit `id: null` is a
+/// Request the server MUST answer, replying with `"id": null`.
+#[tokio::test]
+async fn an_id_of_null_is_a_request_answered_with_a_null_id() {
+    let mut body = body_of("ping", json!({}));
+    body["id"] = Value::Null;
+    let (status, _, body) = send(&server(), post(mirrored("ping", None), &body)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        body["id"],
+        Value::Null,
+        "the response id echoes the null request id"
+    );
+    assert_eq!(body["result"]["resultType"], "complete");
+}
+
+/// `id: null` is processed as a Request, so it runs `validate` and answers a
+/// JSON-RPC error rather than being swallowed as a `202` notification.
+#[tokio::test]
+async fn an_id_of_null_runs_validate_instead_of_being_accepted() {
+    let body = json!({ "jsonrpc": "2.0", "id": Value::Null, "method": "ping" });
+    let (status, _, answer) = send(&server(), post(mirrored("ping", None), &body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(answer["error"]["code"], -32602);
+    assert_eq!(answer["id"], Value::Null);
+}
+
+/// `id: null` on an unknown method replies with `-32601` and the null id,
+/// instead of the `202` a notification would receive.
+#[tokio::test]
+async fn an_id_of_null_for_an_unknown_method_is_not_found_with_a_null_id() {
+    let mut body = body_of("resources/list", json!({}));
+    body["id"] = Value::Null;
+    let (status, _, answer) = send(&server(), post(mirrored("resources/list", None), &body)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(answer["error"]["code"], -32601);
+    assert_eq!(answer["id"], Value::Null);
+}
+
+/// An `id` that is neither a string, a number, nor `null` is rejected with
+/// `-32600` and no echoed id (the request id was never readable).
+#[tokio::test]
+async fn an_id_that_is_not_a_string_number_or_null_is_invalid() {
+    for id in [json!(true), json!([1, 2])] {
+        let mut body = body_of("ping", json!({}));
+        body["id"] = id.clone();
+        let (status, _, answer) = send(&server(), post(mirrored("ping", None), &body)).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{id}");
+        assert_eq!(answer["error"]["code"], -32600, "{id}");
+        assert!(answer.get("id").is_none(), "no id is echoed for {id}");
+    }
+}
+
 /// The header names the revision, but the metadata the body must carry is
 /// incomplete.
 #[tokio::test]
