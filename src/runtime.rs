@@ -154,7 +154,9 @@ where
 /// Builds invocation metadata from the native runtime context.
 ///
 /// The deadline becomes a monotonic instant at once, so a later wall-clock
-/// step cannot move it. An empty invoked ARN is `None`.
+/// step cannot move it. A value that is not an ARN — the empty string, or a
+/// local emulator's placeholder such as `cargo lambda watch`'s `function-arn` —
+/// is `None`.
 ///
 /// Lambda sends the deadline as epoch milliseconds. A local emulator may send
 /// a relative budget instead (`cargo lambda watch` sends `600000`): read as an
@@ -177,7 +179,9 @@ pub fn invocation_from(context: &lambda_runtime::Context) -> Invocation {
         epoch_ms_to_deadline(context.deadline),
     )
     .with_trace_id(context.xray_trace_id.clone())
-    .with_invoked_arn(Some(context.invoked_function_arn.clone()).filter(|arn| !arn.is_empty()))
+    .with_invoked_arn(
+        Some(context.invoked_function_arn.clone()).filter(|arn| arn.starts_with("arn:")),
+    )
     .with_tenant_id(
         context
             .tenant_id

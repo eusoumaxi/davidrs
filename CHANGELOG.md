@@ -7,6 +7,13 @@ version may change the public API, and its entry says how.
 
 ## [Unreleased]
 
+### Fixed
+
+- `invocation_from` sets `invoked_arn` only when the runtime context carries a
+  value that starts with `arn:`, so a non-ARN placeholder — such as
+  `cargo lambda watch`'s `function-arn`, or `lambda_runtime`'s absent-header
+  placeholder — is `None` instead of a garbage string.
+
 ### Changed
 
 - The README now starts with installation, a complete HTTP function and

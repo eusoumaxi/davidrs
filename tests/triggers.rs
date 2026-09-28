@@ -85,6 +85,16 @@ fn an_empty_arn_or_tenant_is_none() {
     assert_eq!(invocation.tenant_id, None);
 }
 
+/// `cargo lambda watch` sends the literal `function-arn` as the invoked ARN
+/// header on every invoke: not an ARN, so it is `None` rather than
+/// `Some("function-arn")`.
+#[test]
+fn a_non_arn_value_from_a_local_emulator_is_none() {
+    let mut native = context(now_ms() + 30_000);
+    native.invoked_function_arn = "function-arn".to_owned();
+    assert_eq!(invocation_from(&native).invoked_arn, None);
+}
+
 #[cfg(feature = "event")]
 mod event {
     use davidrs::event::Event;
