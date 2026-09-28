@@ -84,17 +84,21 @@ async fn hello(app: Arc<App>, input: Hello, _context: Context<()>) -> Result<Jso
 }
 ```
 
-Everything around that function — who may call it, what happens when the body is malformed, how a failure looks on the wire, what is logged, when the deadline hits — is configured once in `main` and enforced by the crate. That is what makes the code small enough for a person to review in a minute, and predictable enough for an AI coding agent to write correctly: the agent writes the business rule, and the rules it could get wrong are not in the handler at all. The `davidrs` agent skill (`npx skills add eusoumaxi/davidrs`) teaches coding agents to write functions the way this guide does, and the repository's `AGENTS.md` gives agents working on the crate itself the same rules as `CONTRIBUTING.md` gives people.
+The pipeline's policies, error renderer and deadline are configured in `main`.
+The handler owns the business rule and must use the invocation deadline to
+bound its own I/O. The `davidrs` agent skill (`npx skills add eusoumaxi/davidrs`)
+teaches coding agents the patterns in this guide; their output still needs
+review and tests. The repository's `AGENTS.md` gives agents working on the
+crate itself the same rules as `CONTRIBUTING.md` gives people.
 
 ## One process, the official runtime, your handler
 
-Some ways of running Rust on Lambda add a second runtime inside the function:
-
-- a web framework served inside the function behind an adapter, so every request makes an extra local HTTP hop into a second server;
-- a proxy or "backend for frontend" function in front of the real one, which doubles the invocations, the cold starts and the bill;
-- a generic router that serves many operations from one function, so every operation pays for the dependencies and the permissions of all the others.
-
-`davidrs` runs the pipeline in the same process as the handler. There is one process, the official runtime, and your handler. One function serves one operation, with exactly the features, dependencies and IAM permissions that operation needs — which is why its deployment package stays small and its cold start short.
+`davidrs` runs the pipeline in the same process as the handler through the
+official Lambda runtime. It does not start a local HTTP server or add a proxy
+function. One function serves one operation, so its Cargo features and IAM
+permissions can be chosen for that operation. Package size, cold-start latency
+and cost depend on the workload and deployment; measure them as described in
+the [deployment guide](crate::guide::deployment#measuring-a-function).
 
 ## Principles
 

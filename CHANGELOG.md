@@ -7,6 +7,13 @@ version may change the public API, and its entry says how.
 
 ## [Unreleased]
 
+### Changed
+
+- The README now starts with installation, a complete HTTP function and
+  direct links to the guide, examples, agent skill and security reporting.
+- The introduction describes runtime boundaries without unmeasured latency
+  or cost claims.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.

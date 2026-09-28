@@ -2,36 +2,54 @@
 
 [![crates.io](https://img.shields.io/crates/v/davidrs.svg)](https://crates.io/crates/davidrs)
 [![docs.rs](https://img.shields.io/docsrs/davidrs)](https://docs.rs/davidrs)
-[![CI](https://github.com/eusoumaxi/davidrs/actions/workflows/ci.yml/badge.svg)](https://github.com/eusoumaxi/davidrs/actions/workflows/ci.yml)
+[![CI and release](https://github.com/eusoumaxi/davidrs/actions/workflows/release.yml/badge.svg?branch=main)](https://github.com/eusoumaxi/davidrs/actions/workflows/release.yml)
 [![MSRV](https://img.shields.io/crates/msrv/davidrs)](Cargo.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A small, feature-gated framework for AWS Lambda functions in Rust. You write the business logic. The crate owns the surrounding code that is easy to get subtly wrong: deadlines, the order of an HTTP request, error bodies that must not leak, and partial failures that must not be reported as success.
+Build focused AWS Lambda functions in Rust. `davidrs` provides typed handlers,
+invocation deadlines, bounded I/O and built-in error responses that keep
+internal details out of HTTP 5xx bodies. It builds on the official AWS Lambda
+runtime and AWS SDK, with one function per operation and empty default features.
 
-**[Guide and API reference →](https://eusoumaxi.github.io/davidrs/)**
+[Getting started](https://eusoumaxi.github.io/davidrs/davidrs/guide/getting_started/index.html)
+· [Guide](https://eusoumaxi.github.io/davidrs/davidrs/guide/index.html)
+· [API reference](https://docs.rs/davidrs)
+· [Examples](examples/README.md)
+· [Architecture](https://eusoumaxi.github.io/davidrs/davidrs/guide/architecture/index.html)
 
-Start with the [introduction](https://eusoumaxi.github.io/davidrs/davidrs/guide/introduction/index.html) if you want to know whether the crate fits, then the [getting started](https://eusoumaxi.github.io/davidrs/davidrs/guide/getting_started/index.html) tutorial, which builds one function and shows the JSON a caller receives. The [guide index](https://eusoumaxi.github.io/davidrs/davidrs/guide/index.html) is organized by the job in front of you (an HTTP route, an SQS consumer, a DynamoDB page, an MCP server), not by module name.
+## What it handles
 
-`davidrs` keeps the official `lambda_runtime` / `lambda_http` adapters and the AWS SDK as the transport, and owns what every function ends up writing around them:
+- **HTTP and events.** Typed HTTP handlers, response streams, SQS consumers, EventBridge targets, schedules and direct invocations.
+- **Time and resource limits.** One absolute invocation deadline, bounded bodies and reads, and explicit retry and pagination limits.
+- **Errors and partial results.** Fixed public 5xx messages, per-record SQS failures, and per-entry DynamoDB and EventBridge outcomes.
+- **AWS services and telemetry.** Helpers around the native SDK, structured metrics and X-Ray traces, with clients and state owned by the application.
+- **MCP on Lambda.** Hand-written tools or tools generated from an OpenAPI document.
 
-- **One absolute deadline per invocation.** Child budgets can only shrink, retries do not get a fresh allowance, and every adapter keeps a margin for cleanup before Lambda's own timeout.
-- **One ordered pipeline per trigger.** Buffered HTTP runs admission, decoding, authorization and the handler in order. Streamed HTTP runs preparation, CORS, negotiation, authorization and the handler. Both use one error renderer before the response starts. SQS, EventBridge, schedules and direct invocations decode their payload before the handler and report its failures to Lambda.
-- **Safe error rendering.** A failure keeps its public message and internal detail apart. The built-in renderers use a fixed message for every 5xx.
-- **Explicit limits.** Buffered request bodies, bounded upstream readers, decompressed payloads, paginated reads, retries and stream producers have limits and report when they hit one.
-- **Honest partial outcomes.** SQS batches report failures per record; `PutEvents`, `BatchWriteItem` and `BatchGetItem` per entry; a bounded read says whether it is complete.
+Enable only the capabilities a function uses. Application authorization,
+admission and error formatting stay configurable through explicit extension
+points. Shared state is an ordinary `Arc<App>`; service calls use the AWS SDK's
+types and builders. The [introduction](https://eusoumaxi.github.io/davidrs/davidrs/guide/introduction/index.html)
+explains where the crate fits and when to use another approach.
 
-It is deliberately **not** a web framework: one Lambda serves one operation,
-so there is no router, no middleware stack, no dependency-injection container
-and no ORM. Enable only the features each function needs. Measure package
-size, memory and latency with your own workload and deployment settings.
+## Quick start
 
-Run it behind API Gateway with AWS WAF and Amazon Cognito: the platform verifies tokens, throttles and filters before the function runs, and the crate covers what only the application knows — the [security chapter](https://eusoumaxi.github.io/davidrs/davidrs/guide/aws_security/index.html) explains the split.
+Use Rust **1.94.1 or later**. Create a binary crate:
 
-The handlers you write are the business logic and nothing else — small enough
-for a person to review at a glance, and predictable enough for an AI coding
-agent to write correctly.
+```bash
+cargo new hello --bin
+cd hello
+```
 
-## Example
+Replace its `[dependencies]` section in `Cargo.toml`:
+
+```toml
+[dependencies]
+davidrs = { version = "0.1", default-features = false, features = ["http"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+```
+
+Replace `src/main.rs` with this complete function:
 
 ```rust,no_run
 use std::sync::Arc;
@@ -62,23 +80,29 @@ async fn main() -> Result<(), RuntimeError> {
 }
 ```
 
-`GET /hello/world` is HTTP 200 and `{"message":"Hello, world"}`. A path that does not match `HelloPath` never calls `hello`: the caller receives HTTP 400 and `{"errorCode":"ERROR_INVALID_PATH","errorMessage":"Invalid request path"}`. A server failure is HTTP 500 with `"errorMessage":"InternalServerError"`, whatever detail you attached.
+Check the program without an AWS account or credentials:
 
-What each piece is doing:
-
-- `Api::new` configures the pipeline once. `"hello"` is the operation name in logs and traces, not the URL. [`Public`](https://docs.rs/davidrs/latest/davidrs/http/struct.Public.html) admits every caller. [`PlainErrors`](https://docs.rs/davidrs/latest/davidrs/http/struct.PlainErrors.html) writes the `errorCode` / `errorMessage` JSON above.
-- The closure reads the path parameter into `HelloPath` before the handler runs. A JSON body uses `request.json::<T>()` the same way. Decoding is synchronous and size-limited.
-- `hello` receives shared state (`Arc<()>` here, your own struct in a real function), the decoded input, and a [`Context`](https://docs.rs/davidrs/latest/davidrs/struct.Context.html) with the request id and the deadline. It returns [`Json`](https://docs.rs/davidrs/latest/davidrs/http/struct.Json.html) or a [`Failure`](https://docs.rs/davidrs/latest/davidrs/http/struct.Failure.html).
-- `run` starts the Lambda loop. It returns only when the runtime itself fails. A bad request is a response, not an error from `main`.
-
-```toml
-[dependencies]
-davidrs = { version = "0.1", default-features = false, features = ["http"] }
-serde = { version = "1", features = ["derive"] }
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+```bash
+cargo check
 ```
 
-Default features are empty. Name every capability the function uses. `http` is enough for the example; add `logs` when you want the log lines the tutorial turns on.
+With an API Gateway route `GET /hello/{name}`, a request to `/hello/world`
+returns HTTP 200:
+
+```json
+{"message":"Hello, world"}
+```
+
+`Public` allows every caller. `PlainErrors` renders decoding and handler
+failures as JSON; its HTTP 5xx responses use the fixed message
+`InternalServerError`. The operation name `"hello"` identifies logs and traces;
+the route and its path parameters are configured in API Gateway or the local
+emulator.
+
+Follow [Getting started](https://eusoumaxi.github.io/davidrs/davidrs/guide/getting_started/index.html)
+to run this pattern locally with Cargo Lambda, add logging and inspect error
+responses. Use [Deployment](https://eusoumaxi.github.io/davidrs/davidrs/guide/deployment/index.html)
+for the build, IAM permissions and trigger settings.
 
 ## Features
 
@@ -131,11 +155,27 @@ The repository ships an [agent skill](https://github.com/vercel-labs/skills) tha
 npx skills add eusoumaxi/davidrs
 ```
 
-`skills/davidrs/SKILL.md` covers every function: features, `main`, handlers, deadlines, tests and Cargo Lambda. The agent reads the reference it needs from `skills/davidrs/references/`: HTTP endpoints, event consumers, AWS services and MCP servers.
+The [skill](skills/davidrs/SKILL.md) covers feature selection, `main`, handlers,
+deadlines, tests and Cargo Lambda. Its [references](skills/davidrs/references/)
+provide examples for HTTP endpoints, event consumers, AWS services and MCP
+servers.
+
+## Security
+
+[SECURITY.md](SECURITY.md) describes the threat model, the crate's guarantees
+and the application's responsibilities. Configure authentication, IAM and
+traffic protection for your deployment; the
+[AWS security guide](https://eusoumaxi.github.io/davidrs/davidrs/guide/aws_security/index.html)
+shows how these fit together. Report suspected vulnerabilities through
+[private vulnerability reporting](https://github.com/eusoumaxi/davidrs/security/advisories/new).
 
 ## Contributing
 
 Contributions are welcome, including AI-assisted ones. [CONTRIBUTING.md](CONTRIBUTING.md) explains the design rules and the branch, commit and pull request conventions; [SECURITY.md](SECURITY.md) explains how to report a vulnerability privately. Every change is recorded in [CHANGELOG.md](CHANGELOG.md).
+
+Use the [issue forms](https://github.com/eusoumaxi/davidrs/issues/new/choose) for
+bug reports and feature requests. Published versions and their release notes
+are on [GitHub Releases](https://github.com/eusoumaxi/davidrs/releases).
 
 ```bash
 scripts/check.sh                      # everything CI runs
