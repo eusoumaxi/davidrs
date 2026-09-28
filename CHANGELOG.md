@@ -7,6 +7,14 @@ version may change the public API, and its entry says how.
 
 ## [Unreleased]
 
+### Fixed
+
+- `Mask` drops an exclusion path's ancestors when no inclusion path keeps
+  them, instead of leaving them as empty objects and reporting them as
+  wanted. `fields=a,-b.c` on `{"a":1,"b":{"c":2,"d":3}}` now yields
+  `{"a":1}` and `wants("b")` is `false`, matching the documented
+  "removes it from whatever is kept" semantics.
+
 ### Changed
 
 - The README now starts with installation, a complete HTTP function and

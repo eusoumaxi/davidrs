@@ -53,6 +53,12 @@ pub struct Mask {
     whole: bool,
     /// Remove this node from whatever is kept.
     excluded: bool,
+    /// This node or a descendant yields data the client asked for: a read or
+    /// a retain that reaches here actually keeps something, rather than an
+    /// empty shell a exclusion path only walked through. It folds in the
+    /// node's own `whole` (when not excluded) and any `live` child, so an
+    /// exclusion-only branch is dead and dropped.
+    live: bool,
 }
 
 impl Mask {
@@ -61,6 +67,7 @@ impl Mask {
     pub fn all() -> Self {
         Self {
             whole: true,
+            live: true,
             ..Self::default()
         }
     }
@@ -104,6 +111,7 @@ impl Mask {
         if !any_included {
             root.whole = true;
         }
+        root.finalize_live();
         root
     }
 
@@ -130,7 +138,7 @@ impl Mask {
                 None => return whole,
             }
         }
-        !node.excluded
+        !node.excluded && (whole || node.live)
     }
 
     /// The mask below `name`, for a nested object the route builds itself.
@@ -205,7 +213,7 @@ impl Mask {
         match value {
             Value::Object(object) => {
                 object.retain(|name, _| match self.children.get(name) {
-                    Some(child) => !child.excluded,
+                    Some(child) => (whole && !child.excluded) || child.live,
                     None => whole,
                 });
                 for (name, child_value) in object.iter_mut() {
@@ -221,6 +229,18 @@ impl Mask {
             }
             _ => {}
         }
+    }
+
+    /// Folds `whole` (when not excluded) and any `live` child into `live`,
+    /// bottom-up, so a node is `live` only when it actually keeps data the
+    /// client asked for. Called once after the tree is built.
+    fn finalize_live(&mut self) {
+        let mut live = self.whole && !self.excluded;
+        for child in self.children.values_mut() {
+            child.finalize_live();
+            live = live || child.live;
+        }
+        self.live = live;
     }
 }
 

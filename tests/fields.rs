@@ -211,3 +211,53 @@ fn sql_columns_quote_identifiers_so_keywords_work() {
     assert_eq!(sql_columns(&[r#"odd"name"#]), r#""odd""name""#);
     assert_eq!(sql_columns(&[]), "");
 }
+
+#[test]
+fn an_exclusion_under_a_non_included_ancestor_drops_the_ancestor() {
+    let mask = Mask::parse(Some("a,-b.c"));
+    assert!(mask.wants("a"));
+    assert!(!mask.wants("b"), "an exclusion-only ancestor is not wanted");
+    assert!(!mask.wants("b.c"));
+    assert!(!mask.wants("b.d"));
+    let mut value = json!({ "a": 1, "b": { "c": 2, "d": 3 } });
+    mask.apply(&mut value);
+    assert_eq!(
+        value,
+        json!({ "a": 1 }),
+        "the ancestor is dropped, not kept as {{}}"
+    );
+}
+
+#[test]
+fn an_exclusion_alone_keeps_intermediate_ancestors() {
+    let mask = Mask::parse(Some("-a.b"));
+    assert!(
+        mask.wants("a"),
+        "with everything kept, an exclusion ancestor is kept"
+    );
+    assert!(
+        mask.wants("a.c"),
+        "a sibling the mask does not name is kept"
+    );
+    assert!(!mask.wants("a.b"), "the excluded leaf is not wanted");
+    let mut value = json!({ "a": { "b": 1, "c": 2 }, "d": 3 });
+    mask.apply(&mut value);
+    assert_eq!(value, json!({ "a": { "c": 2 }, "d": 3 }));
+}
+
+#[test]
+fn stored_does_not_read_a_bug_inflated_exclusion_ancestor() {
+    const PAIR: &[(&str, &str)] = &[("a", "a"), ("b", "b")];
+    assert_eq!(
+        Mask::parse(Some("a,-b.c")).stored(PAIR, &["id"]),
+        Some(vec!["id", "a"]),
+        "the exclusion-only ancestor is not selected, and no None short-circuit"
+    );
+    let mask = Mask::parse(Some("total,-notes.secret"));
+    assert_eq!(
+        mask.stored(FIELDS, &["id"]),
+        Some(vec!["id", "total_cents"]),
+        "the exclusion-only ancestor (`notes`) is not over-read"
+    );
+    assert!(!mask.wants("notes"));
+}
