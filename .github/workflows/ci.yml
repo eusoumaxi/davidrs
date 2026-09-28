@@ -1,21 +1,19 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
   # Weekly, so a new RustSec advisory fails the dependency policy even when
   # nothing was pushed.
   schedule:
     - cron: "0 6 * * 1"
-  # The release workflow runs the same checks before it publishes.
+  # Release runs these checks on main and before publishing a tag.
   workflow_call:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -35,7 +33,11 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
         with:
-          tool: typos,actionlint
+          tool: typos
+      - name: Install actionlint
+        run: |
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: scripts/check.sh rules
       - run: scripts/check.sh lint
       - run: scripts/check.sh spelling

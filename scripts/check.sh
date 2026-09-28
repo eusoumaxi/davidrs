@@ -113,7 +113,8 @@ spelling() {
 workflows() {
   say "workflows and scripts"
   actionlint
-  shellcheck scripts/check.sh .githooks/commit-msg
+  shellcheck scripts/check.sh scripts/prepare-release.sh .githooks/commit-msg
+  python3 -m unittest discover -s tests -p 'release_workflow.py'
 }
 
 deny() {

@@ -117,6 +117,27 @@ AI coding assistants are welcome. Their output meets the same bar as anyone's, a
 
 For the maintainer. Versions follow [Semantic Versioning](https://semver.org): before 1.0, a minor version (`0.x`) may break the public API, and the changelog says how; a patch version never does.
 
+Every push to `main` runs the full CI through `release.yml`. After CI succeeds,
+changes to `src/`, `Cargo.toml`, `Cargo.lock`, `build.rs` or
+`rust-toolchain.toml` since the latest release trigger an automatic release.
+Documentation, tests, skills and workflow changes alone do not publish a crate.
+[Release-plz](https://release-plz.dev) compares the package with crates.io,
+updates the version and changelog, and checks API compatibility with
+`cargo-semver-checks`. Compatible changes normally increment the patch version;
+breaking changes increment the minor version before 1.0. Mark behavioural
+breaking changes with `!` or a `BREAKING CHANGE` footer too, because API checks
+cannot detect every compatibility change.
+
+The workflow commits release metadata on a `chore/release-<version>` branch,
+advances `main` without rewriting history, publishes with Trusted Publishing,
+and creates the tag, GitHub release and documentation from the same commit.
+A newer `main` commit supersedes a queued preparation. GitHub's workflow token
+does not trigger another push workflow when it writes release metadata.
+The `release` environment must allow `main` and tags `v*`; `github-pages`
+must allow both too. Never add the local `.env` token as a workflow secret.
+
+For an explicit version or a retry, the manual tag workflow remains available:
+
 1. On a branch such as `chore/release-0.2.0`, set `version` in `Cargo.toml`, rename `## [Unreleased]` in `CHANGELOG.md` to `## [0.2.0] - YYYY-MM-DD`, add a new empty `## [Unreleased]` above it, and update the links at the end of the file. Merge it as `chore(release): 0.2.0`.
 2. Tag the merged commit on `main` and push the tag:
 
@@ -126,7 +147,7 @@ For the maintainer. Versions follow [Semantic Versioning](https://semver.org): b
    git push origin v0.2.0
    ```
 
-3. The release workflow checks that the tag, `Cargo.toml` and `CHANGELOG.md` agree and that the commit is on `main`, runs CI, publishes the crate to crates.io, creates the GitHub release from the changelog section and rebuilds the documentation site. docs.rs builds the API reference by itself.
+3. The release workflow runs CI, checks that the tag, `Cargo.toml` and `CHANGELOG.md` agree and that the commit is on `main`, publishes the crate to crates.io, creates the GitHub release from the changelog section and rebuilds the documentation site. docs.rs builds the API reference by itself.
 
 Once per repository:
 
