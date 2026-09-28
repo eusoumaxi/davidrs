@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+  workflow_dispatch:
   # Weekly, so a new RustSec advisory fails the dependency policy even when
   # nothing was pushed.
   schedule:
