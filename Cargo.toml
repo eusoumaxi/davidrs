@@ -2,8 +2,8 @@
 name = "davidrs"
 version = "0.1.0"
 authors = ["David Lara <hi@eusoumaxi.com>"]
-edition = "2021"
-rust-version = "1.98.1"
+edition = "2024"
+rust-version = "1.94.1"
 description = "A small, feature-gated framework for AWS Lambda functions: one ordered pipeline per trigger, absolute invocation deadlines, bounded work and failures that cannot leak."
 repository = "https://github.com/eusoumaxi/davidrs"
 homepage = "https://eusoumaxi.github.io/davidrs/"
@@ -29,7 +29,9 @@ include = [
 all-features = true
 
 [lints.rust]
-unsafe_code = "forbid"
+# The library forbids unsafe code outright (`#![forbid(unsafe_code)]` in
+# src/lib.rs); the tests' environment helpers are the one allowed exception.
+unsafe_code = "deny"
 missing_docs = "deny"
 unused_must_use = "deny"
 missing_debug_implementations = "deny"
@@ -203,6 +205,8 @@ http-stream = ["http", "streaming", "dep:http-body", "dep:http-body-util"]
 # REST API (v1) proxy events next to HTTP API (v2). The request facade reads
 # the caller address from either context.
 apigw-rest = ["http", "lambda_http/apigw_rest"]
+# Application Load Balancer events in the buffered pipeline.
+alb = ["http", "lambda_http/alb"]
 streaming = [
   "runtime",
   "dep:bytes",

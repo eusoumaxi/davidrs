@@ -8,11 +8,11 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use base64::Engine as _;
 use davidrs::http::access::{Access, Claims, Grant};
 use davidrs::http::{Admission, Failure, HeaderMap, HttpResponse, Public, Request, StatusCode};
-use davidrs::mcp::{ProtectedResource, Server, Tool, INVALID_ARGUMENTS, MAX_TOOLS};
+use davidrs::mcp::{INVALID_ARGUMENTS, MAX_TOOLS, ProtectedResource, Server, Tool};
 use davidrs::{Context, Invocation};
 use lambda_http::{Body, RequestExt as _};
 use serde::{Deserialize, Serialize, Serializer};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const VERSION: &str = "2026-07-28";
 

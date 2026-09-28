@@ -16,13 +16,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use lambda_http::http::{HeaderName, HeaderValue, StatusCode};
-use lambda_http::{service_fn, Adapter, RequestExt};
+use lambda_http::{RequestExt, service_fn};
 
 use super::codes;
 use super::failure::{Failure, FailureKind};
 use super::policy::{Admission, AdmitAll, Policy};
 use super::render::ErrorRenderer;
-use super::request::{Request, DEFAULT_BODY_LIMIT};
+use super::request::{DEFAULT_BODY_LIMIT, Request};
 use super::response::{HttpResponse, IntoResponse};
 use crate::{Context, Deadline, Invocation, RuntimeError};
 
@@ -298,8 +298,7 @@ where
                 Ok::<_, std::convert::Infallible>(api.handle(app, request, decode, handler).await)
             }
         });
-        lambda_runtime::Runtime::new(Adapter::from(service))
-            .run()
+        lambda_http::run(service)
             .await
             .map_err(crate::runtime::loop_failure)
     }

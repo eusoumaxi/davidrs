@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 
-use davidrs::http::{codes, Body, FailureKind, Method, Request, StatusCode};
+use davidrs::http::{Body, FailureKind, Method, Request, StatusCode, codes};
 use serde::Deserialize;
 
 /// A request built by hand: no request context, no Lambda context.
@@ -200,6 +200,69 @@ fn source_ip_is_unknown_when_the_gateway_reports_an_empty_address() {
     assert_eq!(Request::new(&native).source_ip(), "unknown");
 }
 
+/// An Application Load Balancer appends the caller's address to
+/// `X-Forwarded-For`, so the last entry is the one a client cannot choose.
+#[cfg(feature = "alb")]
+#[test]
+fn source_ip_reads_the_address_a_load_balancer_appended() {
+    let event = serde_json::json!({
+        "requestContext": {
+            "elb": {
+                "targetGroupArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/orders/0123456789abcdef"
+            }
+        },
+        "httpMethod": "GET",
+        "path": "/orders",
+        "queryStringParameters": {},
+        "headers": { "host": "example.com", "x-forwarded-for": "198.51.100.7, 192.0.2.44" },
+        "body": "",
+        "isBase64Encoded": false
+    });
+    let native = lambda_http::request::from_str(&event.to_string()).expect("an ALB event");
+    assert_eq!(Request::new(&native).source_ip(), "192.0.2.44");
+}
+
+#[test]
+fn form_deserializes_a_urlencoded_body() {
+    #[derive(Debug, Deserialize)]
+    struct Signup {
+        email: String,
+        plan: Option<String>,
+    }
+    let native = built(
+        Some("application/x-www-form-urlencoded; charset=utf-8"),
+        Body::Text("email=ada%40example.com&plan=team+plus".to_owned()),
+    );
+    let signup: Signup = Request::new(&native).form().expect("form");
+    assert_eq!(signup.email, "ada@example.com");
+    assert_eq!(signup.plan.as_deref(), Some("team plus"));
+}
+
+#[test]
+fn form_refuses_another_media_type_a_missing_field_and_an_oversized_body() {
+    #[derive(Debug, Deserialize)]
+    struct Signup {
+        #[expect(dead_code)]
+        email: String,
+    }
+    let json = built(Some("application/json"), Body::Text("email=ada".to_owned()));
+    let wrong_type = Request::new(&json).form::<Signup>().unwrap_err();
+    assert_eq!(wrong_type.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+
+    let missing = text("plan=team");
+    let failure = Request::new(&missing).form::<Signup>().unwrap_err();
+    assert_eq!(failure.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(failure.code(), codes::MALFORMED_BODY);
+    assert_eq!(failure.kind(), FailureKind::Decode);
+
+    let large = text("email=ada%40example.com");
+    let failure = Request::new(&large)
+        .with_body_limit(4)
+        .form::<Signup>()
+        .unwrap_err();
+    assert_eq!(failure.status(), StatusCode::PAYLOAD_TOO_LARGE);
+}
+
 #[test]
 fn json_deserializes_a_body_with_or_without_a_json_content_type() {
     for content_type in [None, Some("Application/JSON; charset=utf-8")] {
@@ -347,7 +410,7 @@ fn media_type_drops_parameters_and_case() {
 
 #[cfg(feature = "validate")]
 mod validated {
-    use davidrs::http::{codes, Body, FailureKind, Request, StatusCode};
+    use davidrs::http::{Body, FailureKind, Request, StatusCode, codes};
 
     #[derive(Debug, serde::Deserialize, garde::Validate)]
     struct Line {

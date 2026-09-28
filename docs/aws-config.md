@@ -1,6 +1,8 @@
 # AWS configuration
 
-[`aws::sdk_config`](crate::aws::sdk_config) builds the `SdkConfig` every AWS SDK client is made from, using what Lambda puts in the function's environment: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` when present, and `AWS_REGION`. Its HTTP client uses rustls, and [`Trust`](crate::aws::Trust) chooses which root certificates it accepts. It performs no network I/O.
+Enable `aws`, or enable `dynamo`, `eventbridge`, `secrets` or `queue-visibility`, which enable it for you. Call [`sdk_config`](crate::aws::sdk_config) once in `main`, before the loop, and pass the result to every `Client::new`. A missing `AWS_REGION` or access key fails that call, and the error names the variable, instead of failing the first request with a signing error.
+
+[`aws::sdk_config`](crate::aws::sdk_config) reads only what Lambda puts in the environment: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` when present, and `AWS_REGION`. It does not run the `aws-config` credential chain (profiles, SSO, IMDS, web identity). That chain never answers inside Lambda and is not compiled in. The HTTP client uses rustls, and [`Trust`](crate::aws::Trust) chooses which root certificates it accepts. `sdk_config` itself performs no network I/O.
 
 ## Why it exists
 
@@ -15,14 +17,12 @@ Two smaller mistakes are prevented on the way:
 
 Call it once in `main`, before the loop starts, and build every client from the result. The `dynamo`, `eventbridge`, `secrets` and `queue-visibility` features each add the SDK crate of their service.
 
-```rust
+```rust,no_run
 use davidrs::aws::{sdk_config, Trust};
 
-# std::env::set_var("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE");
-# std::env::set_var("AWS_SECRET_ACCESS_KEY", "secret-example");
-# std::env::set_var("AWS_REGION", "eu-west-1");
 let config = sdk_config(Trust::NativeRoots)?;
-assert_eq!(config.region().map(|region| region.as_ref()), Some("eu-west-1"));
+let region = config.region().map(|region| region.as_ref().to_owned());
+# let _ = region;
 # Ok::<(), davidrs::RuntimeError>(())
 ```
 
@@ -57,3 +57,12 @@ To point a client at a local endpoint, such as DynamoDB Local, override it on th
 - **No refresh.** The credentials are read once, when `sdk_config` runs.
 - **No other settings from the environment.** Endpoint overrides, retry modes and timeouts are not read from variables; set them on the service configuration.
 - **No clients.** Which services a function calls is its own decision.
+
+## If the client cannot sign or cannot connect
+
+| What you see | What it usually means | What to change |
+| --- | --- | --- |
+| `main` fails and the error names `AWS_REGION`, `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` | The variable Lambda normally injects is missing | Set it on the function. Locally, export credentials with `aws configure export-credentials --format env` and set `AWS_REGION`. |
+| It works on your laptop through a profile, and fails in Lambda with no credentials | The code used `aws-config`'s default chain | Use [`sdk_config`](crate::aws::sdk_config). Profiles, SSO and IMDS are not compiled in. |
+| The first call to an AWS endpoint fails TLS after you switched to [`Trust::Pem`](crate::aws::Trust::Pem) | The bundle does not contain the root that endpoint chains to | Start from the Amazon Trust Services roots. A bundle with no valid certificate panics on first connect, so make one real call after changing it. |
+| Calls go to AWS in a test that should stay on your machine | The client was built with `sdk_config` and no endpoint override | Point the service configuration at `http://localhost:8000`, or build the test client with the SDK's in-process HTTP client and do not call `sdk_config`. |

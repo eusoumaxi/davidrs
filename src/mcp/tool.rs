@@ -6,11 +6,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json::{json, Map, Value};
+use serde::de::DeserializeOwned;
+use serde_json::{Map, Value, json};
 
-use crate::http::{codes, Failure, FailureKind, StatusCode};
+use crate::http::{Failure, FailureKind, StatusCode, codes};
 use crate::{Context, RuntimeError};
 
 /// The code of a tool call whose arguments do not fit the tool: a typed

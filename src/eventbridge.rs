@@ -11,8 +11,8 @@
 //! The [EventBridge chapter](crate::guide::eventbridge) of the guide shows
 //! both functions in use.
 
-use aws_sdk_eventbridge::types::PutEventsRequestEntry;
 use aws_sdk_eventbridge::Client;
+use aws_sdk_eventbridge::types::PutEventsRequestEntry;
 
 use crate::{Deadline, RuntimeError};
 
@@ -181,7 +181,7 @@ pub async fn publish_batch<T: serde::Serialize>(
         Err(_) => {
             return Ok(PublishOutcome {
                 entries: vec![EntryOutcome::Unknown; details.len()],
-            })
+            });
         }
         Ok(Err(error)) => return Err(RuntimeError::other(format!("publishing to {bus}"), error)),
         Ok(Ok(response)) => response,

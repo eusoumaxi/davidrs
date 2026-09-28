@@ -9,16 +9,16 @@
 //! The [configuration chapter](crate::guide::aws_config) of the guide covers
 //! choosing the roots and running locally.
 
-use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_credential_types::Credentials;
+use aws_credential_types::provider::SharedCredentialsProvider;
 use aws_smithy_async::rt::sleep::{SharedAsyncSleep, TokioSleep};
 use aws_smithy_http_client::tls::rustls_provider::CryptoMode;
 use aws_smithy_http_client::tls::{Provider, TlsContext, TrustStore};
 use aws_smithy_runtime_api::client::behavior_version::BehaviorVersion;
-use aws_types::region::Region;
 use aws_types::SdkConfig;
+use aws_types::region::Region;
 
-use crate::{required_env, RuntimeError};
+use crate::{RuntimeError, required_env};
 
 /// Which root certificates the SDK's TLS client trusts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

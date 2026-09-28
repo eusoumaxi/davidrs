@@ -308,4 +308,4 @@ mod visibility {
 }
 
 #[cfg(feature = "queue-visibility")]
-pub use visibility::{Visibility, MAX_VISIBILITY_TIMEOUT};
+pub use visibility::{MAX_VISIBILITY_TIMEOUT, Visibility};

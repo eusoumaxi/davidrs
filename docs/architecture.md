@@ -1,6 +1,6 @@
 # Architecture
 
-`davidrs` is one crate: value types at the root, and one module per capability, each behind the feature of the same name. This chapter follows an invocation through the crate: how it becomes an [`Invocation`](crate::Invocation) with a deadline, how each pipeline runs, how failures are rendered, and where an application plugs in.
+`davidrs` is one crate: value types at the root, and one module per capability, each behind the feature of the same name. This chapter follows one invocation from Lambda's context to the response: which step runs before the handler, what a failure is allowed to contain, and which hook owns a decision the crate cannot make for you. Application policy goes through those hooks. It does not go into a router, a middleware stack, or a second copy of the pipeline in your crate. [Getting started](crate::guide::getting_started) is enough to write the first function.
 
 ## Layout
 
@@ -162,3 +162,16 @@ The per-service modules own partial outcomes and bounds, and nothing else. Keys,
 ## Concurrency
 
 Shared state is immutable behind `Arc`. Independent I/O uses `join` or bounded task sets. No lock is held across an await, and the JWKS cache coalesces refreshes behind an async mutex with a minimum interval, so a flood of unknown key ids causes one fetch. A timeout cancels local waiting; it cannot undo a remote write, so use idempotency where a write can complete after the connection is lost.
+
+## Where a change belongs
+
+When a behaviour is wrong, change the hook that owns it. Adding a second copy of the pipeline in application code is how the order of steps drifts.
+
+| You want to | Put it in |
+| --- | --- |
+| Refuse a request before the body is parsed (a quota, a maintenance switch) | [`Admission`](crate::http::Admission), on a buffered [`Api`](crate::http::Api) only. A streamed route has no admission stage; the handler counts once it knows the caller. |
+| Decide who is calling, and hand the handler evidence that cannot be built by hand | [`Policy`](crate::http::Policy). Keep the scope's fields private. |
+| Change the JSON or XML of an error, without changing which step failed | [`ErrorRenderer`](crate::http::ErrorRenderer). Read the message through [`public_message`](crate::http::Failure::public_message). |
+| Add a header to every response, success and failure | `finalize` on the pipeline. |
+| Restore a header an edge function moved, before anything reads the request | [`StreamApi::prepare`](crate::http::stream::StreamApi::prepare). |
+| Business logic | the handler. It should not re-check the policy, and it should not format the error envelope. |

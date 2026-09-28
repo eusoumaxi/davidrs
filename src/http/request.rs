@@ -8,9 +8,9 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use lambda_http::RequestExt;
 use lambda_http::http::{HeaderMap, Method, StatusCode};
 use lambda_http::request::RequestContext;
-use lambda_http::RequestExt;
 use serde::de::DeserializeOwned;
 
 use super::codes;
@@ -152,15 +152,26 @@ impl<'a> Request<'a> {
     /// Reads `sourceIp` from an HTTP API or, with the `apigw-rest`
     /// feature, a REST API request context. A request with no context,
     /// an empty address or another gateway flavour gives `"unknown"`.
-    /// Forwarded headers are ignored on purpose: trusting them needs a proxy
-    /// policy of the application's own, and without one any caller could
-    /// choose its own rate-limit key.
+    /// Forwarded headers are otherwise ignored on purpose: trusting them needs
+    /// a proxy policy of the application's own, and without one any caller
+    /// could choose its own rate-limit key.
+    ///
+    /// With the `alb` feature, an Application Load Balancer request, whose
+    /// context has no address, gives the last address of `X-Forwarded-For`:
+    /// the one the load balancer appends in its default `append` mode. With
+    /// the `preserve` or `remove` modes that address is not the caller's, so
+    /// keep `append` wherever this address is a rate-limit key.
     #[must_use]
     pub fn source_ip(&self) -> String {
         let ip = match self.inner.request_context_ref() {
             Some(RequestContext::ApiGatewayV2(gateway)) => gateway.http.source_ip.as_deref(),
             #[cfg(feature = "apigw-rest")]
             Some(RequestContext::ApiGatewayV1(gateway)) => gateway.identity.source_ip.as_deref(),
+            #[cfg(feature = "alb")]
+            Some(RequestContext::Alb(_)) => self
+                .header("x-forwarded-for")
+                .and_then(|forwarded| forwarded.rsplit(',').next())
+                .map(str::trim),
             _ => None,
         };
         ip.filter(|ip| !ip.is_empty())
@@ -204,6 +215,56 @@ impl<'a> Request<'a> {
             .with_kind(FailureKind::Decode));
         }
         serde_json::from_slice(bytes).map_err(|_| decode_failure(codes::MALFORMED_BODY, "body"))
+    }
+
+    /// Deserializes an `application/x-www-form-urlencoded` body, bounded by
+    /// the body limit: what an HTML form, a webhook or an OAuth client posts.
+    ///
+    /// Names and values are percent-decoded, and `+` reads as a space. A
+    /// missing `Content-Type` is accepted, as for JSON. Each field is read
+    /// once; for a name that repeats, parse [`Request::raw_body`] yourself.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `413` when the body exceeds the limit, a `415` when it
+    /// declares another media type, and a `400` when it does not deserialize
+    /// into `T`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use davidrs::http::{Body, Request};
+    ///
+    /// #[derive(serde::Deserialize)]
+    /// struct Signup {
+    ///     email: String,
+    ///     plan: Option<String>,
+    /// }
+    ///
+    /// let native = lambda_http::http::Request::builder()
+    ///     .method("POST")
+    ///     .header("content-type", "application/x-www-form-urlencoded")
+    ///     .body(Body::Text("email=ada%40example.com&plan=team+plus".to_owned()))
+    ///     .unwrap();
+    /// let signup: Signup = Request::new(&native).form().unwrap();
+    /// assert_eq!(signup.email, "ada@example.com");
+    /// assert_eq!(signup.plan.as_deref(), Some("team plus"));
+    /// ```
+    pub fn form<T: DeserializeOwned>(&self) -> Result<T, Failure> {
+        self.check_body_limit()?;
+        if self
+            .media_type()
+            .is_some_and(|media| media != "application/x-www-form-urlencoded")
+        {
+            return Err(Failure::new(
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                codes::UNSUPPORTED_MEDIA_TYPE,
+                "Expected application/x-www-form-urlencoded",
+            )
+            .with_kind(FailureKind::Decode));
+        }
+        serde_urlencoded::from_bytes(self.raw_body())
+            .map_err(|_| decode_failure(codes::MALFORMED_BODY, "body"))
     }
 
     /// Checks the body against the limit without reading it.

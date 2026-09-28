@@ -113,13 +113,13 @@ pub async fn read_bounded(
 ) -> Result<bytes::Bytes, RuntimeError> {
     use futures_util::StreamExt as _;
 
-    if let Some(declared) = response.content_length() {
-        if declared > limit as u64 {
-            return Err(RuntimeError::LimitExceeded {
-                kind: "response bytes",
-                limit: limit as u64,
-            });
-        }
+    if let Some(declared) = response.content_length()
+        && declared > limit as u64
+    {
+        return Err(RuntimeError::LimitExceeded {
+            kind: "response bytes",
+            limit: limit as u64,
+        });
     }
     let mut collected = bytes::BytesMut::new();
     let mut stream = response.bytes_stream();

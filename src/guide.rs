@@ -1,26 +1,59 @@
-//! The developer guide: why `davidrs` exists, how it is built, and how to use
-//! each capability.
+//! The developer guide: why `davidrs` exists, how an invocation moves through
+//! it, and how to use each capability without rediscovering the failure it
+//! was written to prevent.
 //!
-//! The rest of this site is the API reference. These chapters explain it, and
-//! every code example in them is compiled and run as a test, so none of them
-//! can drift from the code.
+//! The rest of this site is the API reference. It describes every type. This
+//! guide tells you which type to reach for, what to configure around it, what
+//! a caller or Lambda should observe when it works, and what to change when
+//! it does not. Every code example is compiled and run as a test, so a sample
+//! that is printed here matches the crate.
 //!
-//! # Read first
+//! Each chapter stands on its own. The first paragraph says when to read it.
+//! You do not have to read the guide in order after [getting started](getting_started).
 //!
-//! 1. [`introduction`] — the problems the crate solves, and what it
-//!    deliberately does not do.
-//! 2. [`getting_started`] — a first function, choosing features, running it
-//!    locally.
-//! 3. [`deployment`] — Cargo Lambda, project layout, package sizes, and how
-//!    a function connects to API Gateway, Function URLs, CloudFront, SQS and
-//!    EventBridge.
-//! 4. [`architecture`] — the invocation, the pipelines, failures and the
-//!    extension points.
-//! 5. [`aws_security`] — the recommended AWS architecture: what the platform
-//!    enforces before the function runs, and what the function still does.
-//! 6. [`features`] — every feature and exactly what it links.
+//! # Read this first
 //!
-//! # One chapter per capability
+//! Follow this path once, the first time you use the crate:
+//!
+//! 1. [`introduction`] — the failures a hand-written function usually ships
+//!    with, what this crate takes over, and when you should use something else.
+//! 2. [`getting_started`] — one HTTP function, from an empty crate to a local
+//!    request, including the response body and the first errors you will hit.
+//! 3. [`features`] — the `features` list in `Cargo.toml`, and why a workspace
+//!    build can hide a missing one.
+//! 4. The chapter for the trigger you are actually deploying (the table
+//!    below).
+//! 5. [`deployment`] — the binary, the front door in AWS, and the setting that
+//!    makes the crate's partial-failure report do nothing if you forget it.
+//! 6. [`testing`] — how to exercise the handler without an AWS account.
+//!
+//! Read [`architecture`] when you need the order of steps inside one
+//! invocation. Read [`aws_security`] when you are deciding what CloudFront,
+//! WAF, API Gateway and Cognito should refuse before the function runs.
+//!
+//! # Find a chapter by the job in front of you
+//!
+//! | You are trying to | Read |
+//! | --- | --- |
+//! | Answer API Gateway or a Function URL with one JSON response | [`http`] |
+//! | Know who is calling, which tenant they act for, or how many times they may call | [`access`], then [`aws_security`] for what the platform should do first |
+//! | Verify an RS256 bearer token inside the function | [`tokens`] |
+//! | Stream JSON or server-sent events | [`streaming`] |
+//! | Return only the JSON fields a client asked for | [`partial_responses`] |
+//! | Report every invalid field in one `400` | [`validation`] |
+//! | Consume an SQS queue without replaying the messages that succeeded | [`queues`] |
+//! | Handle an EventBridge rule, a schedule, or a direct `Invoke` | [`triggers`] |
+//! | Stop a retry from getting a fresh timeout, or fail startup when configuration is missing | [`invocations`] |
+//! | Build AWS SDK clients from the Lambda environment | [`aws_config`] |
+//! | Query DynamoDB with a limit, a page token, or an honest batch | [`dynamodb`] |
+//! | Publish EventBridge events and see which entries were rejected | [`eventbridge`] |
+//! | Load a secret once, without the value appearing in an error | [`secrets`] |
+//! | Call another HTTP service with a size cap and a timeout | [`outbound_http`] |
+//! | Cache a value, gzip a payload, or derive a SHA-256 key | [`utilities`] |
+//! | Log, emit a CloudWatch metric, or join an X-Ray trace | [`telemetry`] |
+//! | Let an AI client call your API as the signed-in user | [`mcp`] |
+//!
+//! # Every chapter
 //!
 //! | Chapter | Feature | Covers |
 //! | --- | --- | --- |

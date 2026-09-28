@@ -6,14 +6,14 @@
 
 use std::time::Duration;
 
+use aws_sdk_secretsmanager::Client;
 use aws_sdk_secretsmanager::config::retry::RetryConfig;
 use aws_sdk_secretsmanager::config::{
     AsyncSleep, BehaviorVersion, Credentials, Region, SharedAsyncSleep, Sleep,
 };
-use aws_sdk_secretsmanager::Client;
 use aws_smithy_http_client::test_util::infallible_client_fn;
-use davidrs::{error_chain, RuntimeError};
-use serde_json::{json, Value};
+use davidrs::{RuntimeError, error_chain};
+use serde_json::{Value, json};
 
 /// The SDK's timer, on Tokio.
 #[derive(Debug)]

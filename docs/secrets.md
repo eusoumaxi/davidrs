@@ -1,6 +1,6 @@
 # Secrets
 
-The [`secrets`](crate::secrets) module reads a secret from AWS Secrets Manager. [`string`](crate::secrets::string) returns its string value; [`json`](crate::secrets::json) deserializes that value into a type of yours. Both take the Secrets Manager client and the secret's name or ARN.
+Enable `secrets`. The [`secrets`](crate::secrets) module reads one secret from AWS Secrets Manager. [`string`](crate::secrets::string) returns the string value. [`json`](crate::secrets::json) deserializes that value into a type of yours. Both take the client and the secret's name or ARN. Call them in `main`, and store the typed value on `App`. The environment variable holds the name or ARN (`required_env("SIGNING_SECRET")`), never the secret itself. The function's role needs `secretsmanager:GetSecretValue` on that secret and nothing else. A malformed JSON secret reports a line and column. The error names the secret and does not include the value, so it can be logged as it is.
 
 ## Why it exists
 
@@ -58,4 +58,14 @@ The name comes from configuration; the value never does. A secret stored as bina
 - **No caching or rotation.** Read once in `main`; after a rotation, new execution environments read the new value. A function that must follow rotation without a cold start reads the secret again itself.
 - **No binary secrets.** Only the string value is read.
 - **No versions or stages.** The current version is read; for another one, call the SDK directly.
-- **No redaction elsewhere.** Once you hold the value, keeping it out of logs and out of a failure's message is up to you.
+- **No redaction elsewhere.** Once you hold the value, keeping it out of logs and out of a failure's message is up to you. `Failure::internal` and `RuntimeError` will happily carry a string you format yourself. Do not format the secret into either.
+
+## If startup fails on a secret
+
+| What you see | What it usually means | What to change |
+| --- | --- | --- |
+| The cold start fails and the error names the variable, not the secret | `required_env` did not find the name or ARN | Set `SIGNING_SECRET` (or whichever name you chose) to the secret's name or ARN. The value does not belong in the environment. |
+| The error names the secret and is an access or not-found error from the SDK | The role cannot `GetSecretValue`, or the name is wrong | Grant that action on that secret only. Confirm the name in the same account and Region as the function. |
+| The error is [`RuntimeError::Configuration`](crate::RuntimeError::Configuration) and mentions a line and column | The secret is JSON of the wrong shape, or it is not JSON | Store the fields your struct expects. The message does not contain the secret. |
+| The same variant, and the secret is binary | [`string`](crate::secrets::string) and [`json`](crate::secrets::json) read the string value only | Store it as text, or call the SDK yourself for a binary secret. |
+| A warm environment keeps the old value after a rotation | The secret was read once in `main` | A new execution environment reads the new value. Read again yourself only if you must rotate without a cold start. |

@@ -48,6 +48,7 @@
 //! | `http` | [`http::Api`]: the buffered API Gateway / Function URL pipeline, [`http::access`], [`http::RateLimited`], [`http::fields`] |
 //! | `http-stream` | [`http::stream`]: streamed JSON and server-sent events with CORS and content negotiation |
 //! | `apigw-rest` | REST API proxy events next to HTTP API |
+//! | `alb` | Application Load Balancer events in the buffered pipeline |
 //! | `streaming` | [`streaming`]: response bodies that own their producer |
 //! | `queue`, `queue-visibility` | [`queue`]: SQS partial-batch processing, visibility changes |
 //! | `event`, `schedule` | [`event`], [`schedule`]: typed EventBridge and scheduled payloads |
@@ -67,9 +68,15 @@
 //!
 //! # Where to start
 //!
-//! The [`guide`] explains why the crate exists, how the pipelines work and
-//! how to use each capability, with examples that are compiled and tested.
-//! `examples/` in the repository holds one runnable program per trigger.
+//! The [`guide`] is organized by the job in front of you. Read
+//! [`guide::introduction`] to decide whether the crate
+//! fits, then [`guide::getting_started`], which builds
+//! one function and shows the JSON a caller receives. After that, open the
+//! chapter for the trigger or service you are deploying. The guide's examples
+//! are compiled and tested. `examples/` in the repository holds one runnable
+//! program per trigger.
+
+#![forbid(unsafe_code)]
 
 mod context;
 mod env;
@@ -77,7 +84,7 @@ mod error;
 
 pub use context::{Context, Deadline, Invocation};
 pub use env::{list_env, optional_env, required_env};
-pub use error::{chain as error_chain, RuntimeError};
+pub use error::{RuntimeError, chain as error_chain};
 
 #[cfg(feature = "auth")]
 pub mod auth;

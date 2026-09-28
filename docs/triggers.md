@@ -1,6 +1,8 @@
 # Triggers
 
-Three entry points serve the triggers that are neither HTTP nor SQS: [`event::run`](crate::event::run) for EventBridge rules, [`schedule::run`](crate::schedule::run) for schedules, and [`runtime::run`](crate::runtime::run) for everything else. Each one starts the native Lambda loop and calls your handler once per invocation.
+Three entry points serve the triggers that are neither HTTP nor SQS. Pick the row, enable that feature, and return `Err` for a real failure. Lambda's retries, on-failure destinations and dead-letter queues act on invocation errors. A handler that catches the failure and returns `Ok` looks successful, and the event is gone.
+
+The three entry points are: [`event::run`](crate::event::run) for EventBridge rules, [`schedule::run`](crate::schedule::run) for schedules, and [`runtime::run`](crate::runtime::run) for everything else. Each one starts the native Lambda loop and calls your handler once per invocation.
 
 | The function is invoked by | Use |
 | --- | --- |
@@ -15,14 +17,14 @@ Three entry points serve the triggers that are neither HTTP nor SQS: [`event::ru
 All three take the application state and a handler of one shape:
 
 ```text
-async fn(Arc<App>, Input, Context<()>) -> Result<Output, E>    where E: Display
+async fn(Arc<App>, Input, Context<()>) -> Result<Output, E>    where E: Into<Diagnostic>
 ```
 
 The invocation runs in a fixed order:
 
 1. The runtime deserializes the payload into `Input`. A payload that does not match is an invocation error, and the handler never runs.
 2. The handler runs under the invocation deadline minus 100 ms, kept to post the answer.
-3. `Ok` is serialized as the function's response (`null` for `event` and `schedule`). `Err` becomes an invocation error whose message is the error's `Display`. A handler that overruns its budget becomes an invocation error `deadline exceeded after … ms`.
+3. `Ok` is serialized as the function's response (`null` for `event` and `schedule`). `Err` becomes an invocation error through `Into<`[`Diagnostic`](crate::runtime::Diagnostic)`>`, which sets its `errorType` and message: a [`RuntimeError`](crate::RuntimeError) gives its variant (`Configuration`, `LimitExceeded`, …), a `String` its text as the message, with its Rust type name as `errorType`, and an error of your own the `errorType` you choose in `From<YourError> for Diagnostic`, which a Step Functions `Retry` or `Catch` can match. A handler that overruns its budget becomes a `DeadlineExceeded` invocation error.
 
 `run` itself returns only when the loop fails — for example when the Runtime API cannot be read — so its `Result` is what `main` returns.
 

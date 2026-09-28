@@ -13,17 +13,17 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use base64::Engine as _;
-use opentelemetry::trace::{TraceContextExt as _, TracerProvider as _};
 use opentelemetry::Context;
+use opentelemetry::trace::{TraceContextExt as _, TracerProvider as _};
 use opentelemetry_aws::detector::LambdaResourceDetector;
-use opentelemetry_aws::trace::xray_propagator::span_context_from_str;
 use opentelemetry_aws::trace::XrayIdGenerator;
+use opentelemetry_aws::trace::xray_propagator::span_context_from_str;
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::transform::common::tonic::ResourceAttributesWithSchema;
 use opentelemetry_proto::transform::trace::tonic::group_spans_by_resource_and_scope;
+use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::error::{OTelSdkError, OTelSdkResult};
 use opentelemetry_sdk::trace::{Sampler, SdkTracerProvider, SpanData, SpanExporter};
-use opentelemetry_sdk::Resource;
 use prost::Message as _;
 use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
@@ -145,6 +145,7 @@ pub fn init(service_fallback: &str) -> Result<SdkTracerProvider, RuntimeError> {
     let provider = tracer_provider(&agent_endpoint(), service_fallback)?;
     tracing_subscriber::registry()
         .with(super::logs::level_from_env())
+        .with(super::logs::runtime_span_filter())
         .with(super::logs::text_layer())
         .with(
             tracing_opentelemetry::layer()
@@ -173,10 +174,10 @@ pub fn join_trace(span: &tracing::Span, xray_trace_header: Option<&str>) {
     }
     span.record("otel.kind", "SERVER");
     span.set_attribute("faas.coldstart", COLD_START.swap(false, Ordering::Relaxed));
-    if let Some(parent) = xray_trace_header.and_then(span_context_from_str) {
-        if let Err(error) = span.set_parent(Context::new().with_remote_span_context(parent)) {
-            tracing::warn!(%error, "could not join the X-Ray trace");
-        }
+    if let Some(parent) = xray_trace_header.and_then(span_context_from_str)
+        && let Err(error) = span.set_parent(Context::new().with_remote_span_context(parent))
+    {
+        tracing::warn!(%error, "could not join the X-Ray trace");
     }
 }
 

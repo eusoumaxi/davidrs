@@ -1,6 +1,6 @@
 # Invocations
 
-Every adapter turns what Lambda delivers into the same few values: an [`Invocation`](crate::Invocation) with its [`Deadline`](crate::Deadline), a [`Context`](crate::Context) for the handler, and a [`RuntimeError`](crate::RuntimeError) when something outside the request goes wrong. They live at the crate root and need no feature, so a domain crate can take a `Deadline` or return a `RuntimeError` without linking the runtime.
+Every adapter turns what Lambda delivers into the same few values: an [`Invocation`](crate::Invocation) with its [`Deadline`](crate::Deadline), a [`Context`](crate::Context) for the handler, and a [`RuntimeError`](crate::RuntimeError) when something outside the request goes wrong. They live at the crate root and need no feature, so a domain crate can take a `Deadline` or return a `RuntimeError` without linking the runtime. A missing environment variable belongs in `main`, where it fails the cold start. A timeout measured from "now" inside each retry does not: three attempts of five seconds overrun a ten-second invocation, and [`Deadline::child`](crate::Deadline::child) is how a retry stays inside the one budget.
 
 ## Deadline
 
@@ -121,7 +121,7 @@ assert!(error_chain(&error).starts_with("loading settings: "));
 
 **How to use it.**
 
-```rust
+```rust,no_run
 use davidrs::{list_env, optional_env, required_env, RuntimeError};
 
 /// What the function reads once, before its first invocation.
@@ -141,14 +141,12 @@ impl Config {
     }
 }
 
-# std::env::set_var("TABLE", "orders");
-# std::env::set_var("ALLOWED_ORIGINS", "https://a.example.com, https://b.example.com");
 let config = Config::from_env()?;
-assert_eq!(config.table, "orders");
-assert_eq!(config.origins, ["https://a.example.com", "https://b.example.com"]);
-assert_eq!(config.greeting, "Hello");
+# let _ = (config.table, config.origins, config.greeting);
 # Ok::<(), RuntimeError>(())
 ```
+
+With `TABLE=orders` and `ALLOWED_ORIGINS="https://a.example.com, https://b.example.com"`, `origins` is `["https://a.example.com", "https://b.example.com"]` and `greeting` falls back to `"Hello"`.
 
 **Use cases.**
 

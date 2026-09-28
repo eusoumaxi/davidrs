@@ -5,6 +5,8 @@
 //! [`ENV`]; the others record into a subscriber of their own thread.
 #![cfg(feature = "logs")]
 
+mod support;
+
 use std::fmt::{self, Write as _};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -80,19 +82,19 @@ fn the_level_is_a_bare_level_in_rust_log_or_info() {
         (None, LevelFilter::INFO),
     ] {
         match value {
-            Some(value) => std::env::set_var("RUST_LOG", value),
-            None => std::env::remove_var("RUST_LOG"),
+            Some(value) => support::env::set("RUST_LOG", value),
+            None => support::env::remove("RUST_LOG"),
         }
         assert_eq!(level_from_env(), expected, "{value:?}");
     }
-    std::env::remove_var("RUST_LOG");
+    support::env::remove("RUST_LOG");
 }
 
 /// One test, because the global subscriber can be installed once per process.
 #[test]
 fn telemetry_installs_once_and_a_second_install_is_an_error() {
     let _env = ENV.lock().unwrap_or_else(PoisonError::into_inner);
-    std::env::remove_var("RUST_LOG");
+    support::env::remove("RUST_LOG");
     let guard = davidrs::telemetry::init("logs-test").expect("first install");
     assert_eq!(
         format!("{guard:?}"),

@@ -5,8 +5,8 @@
 //! loop, `streaming::run`, is exercised in `tests/lambda_loop.rs`.
 #![cfg(feature = "streaming")]
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use bytes::Bytes;

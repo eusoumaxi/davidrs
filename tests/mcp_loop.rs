@@ -8,13 +8,13 @@
 
 mod support;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use davidrs::http::Public;
-use davidrs::mcp::{Server, PROTOCOL_VERSION};
-use serde_json::{json, Value};
+use davidrs::mcp::{PROTOCOL_VERSION, Server};
+use serde_json::{Value, json};
 use support::server::{self, Recorded};
 use tokio::sync::mpsc;
 
@@ -102,7 +102,7 @@ async fn the_lambda_loop_serves_the_protocol() {
             "2026/01/01/[$LATEST]0f1e".to_owned(),
         ),
     ] {
-        std::env::set_var(name, value);
+        support::env::set(name, value);
     }
 
     let lambda = Server::<(), _>::new("orders", "1.0.0", Public).run(Arc::new(()));

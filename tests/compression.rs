@@ -1,8 +1,8 @@
 //! Bounded gzip: the decoded size is capped whatever the compressed size.
 #![cfg(feature = "compression")]
 
-use davidrs::compression::{gunzip_bounded, gunzip_to_string_bounded, gzip};
 use davidrs::RuntimeError;
+use davidrs::compression::{gunzip_bounded, gunzip_to_string_bounded, gzip};
 
 fn packed(data: &[u8]) -> Vec<u8> {
     gzip(data).expect("gzip")

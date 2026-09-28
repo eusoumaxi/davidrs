@@ -2,7 +2,7 @@
 //! to a JSON response, and asking it which work a route can skip.
 #![cfg(feature = "http")]
 
-use davidrs::http::fields::{sql_columns, DynamoProjection, Mask};
+use davidrs::http::fields::{DynamoProjection, Mask, sql_columns};
 use serde_json::json;
 
 #[test]

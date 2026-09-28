@@ -6,11 +6,11 @@
 
 use std::time::Duration;
 
-use davidrs::http::{
-    codes, literal, Body, ErrorCatalog, ErrorDefinition, ErrorRenderer, Failure, FailureKind,
-    HttpResponse, PlainErrors, StatusCode, INTERNAL_MESSAGE,
-};
 use davidrs::RuntimeError;
+use davidrs::http::{
+    Body, ErrorCatalog, ErrorDefinition, ErrorRenderer, Failure, FailureKind, HttpResponse,
+    INTERNAL_MESSAGE, PlainErrors, StatusCode, codes, literal,
+};
 
 fn body(response: &HttpResponse) -> &str {
     match response.body() {

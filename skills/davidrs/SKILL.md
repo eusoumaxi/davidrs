@@ -8,9 +8,11 @@ license: MIT
 
 `davidrs` is a small framework over the official `lambda_runtime` and `lambda_http` crates and the AWS SDK. One function serves one operation: `main` reads configuration once, builds the application state and hands one handler to one pipeline. There is no router, middleware stack, dependency-injection container or ORM, and none should be added. Use this skill for any Rust Lambda function that depends on `davidrs`, and read the reference for its trigger or service (see References) before writing code.
 
+When a call fails, read the matching guide chapter before changing the handler. The chapter opens with the feature to enable and the behaviour you should observe, and the chapters that have an "If …" section name the platform setting that makes a correct function look broken: `ReportBatchItemFailures` left off, tracing left in `PassThrough`, a feature that compiled only because a workspace sibling enabled it, a `PutEvents` or `BatchWriteItem` `200` that did not accept every entry. The guide index is organized by that job: <https://docs.rs/davidrs/latest/davidrs/guide/index.html>.
+
 ## Workflow
 
-1. Choose the pipeline and the features from the table below; enable nothing else. Use Rust 1.98.1 or later.
+1. Choose the pipeline and the features from the table below; enable nothing else. Use Rust 1.94.1 or later.
 2. Write `App` and `App::from_env`: every setting read once with `required_env` / `optional_env`, every client built once.
 3. Write the handler: `async fn(Arc<App>, Input, Context<Scope>) -> Result<Output, Error>`.
 4. Wire `main`: telemetry guard, `Arc::new(App::from_env()?)`, one pipeline call.
@@ -19,7 +21,7 @@ license: MIT
 
 | The function… | Features | `main` ends with |
 | --- | --- | --- |
-| answers API Gateway or a Function URL | `http` | `Api::new(op, policy, renderer).run(app, decode, handler)` |
+| answers API Gateway, a Function URL or (with `alb`) an Application Load Balancer | `http` | `Api::new(op, policy, renderer).run(app, decode, handler)` |
 | streams JSON or server-sent events over HTTP | `http-stream` | `StreamApi::new(op, policy, renderer).run(app, handler)` |
 | consumes an SQS queue | `queue` (+ `queue-visibility`) | `davidrs::queue::run(app, handler)` |
 | is an EventBridge rule target / runs on a schedule | `event` / `schedule` | `davidrs::event::run` / `davidrs::schedule::run` |
@@ -99,7 +101,7 @@ async fn main() -> Result<(), RuntimeError> {
 }
 ```
 
-- **Errors.** HTTP handlers and MCP tools return `http::Failure`: `Failure::new(status, "ERROR_…", "message the client may read")` for a 4xx; `Failure::internal(code, detail)` or `Failure::from_error(code, &error)` for a 5xx, whose text is never rendered. `?` on a `RuntimeError` is a `500`. Other triggers return an `E: Display`, usually `RuntimeError::message(..)` or `RuntimeError::other("what was being done", error)`; that `Err` is what Lambda retries, so never swallow a failure into `Ok`.
+- **Errors.** HTTP handlers and MCP tools return `http::Failure`: `Failure::new(status, "ERROR_…", "message the client may read")` for a 4xx; `Failure::internal(code, detail)` or `Failure::from_error(code, &error)` for a 5xx, whose text is never rendered. `?` on a `RuntimeError` is a `500`. SQS handlers return any `E: Display`; EventBridge, schedule and direct handlers any `E: Into<runtime::Diagnostic>` (its `errorType` is what Step Functions matches); usually `RuntimeError::message(..)` or `RuntimeError::other("what was being done", error)`; that `Err` is what Lambda retries, so never swallow a failure into `Ok`.
 - **Deadlines.** `ctx.deadline()` is one absolute budget; the pipeline keeps 100 ms (1 s for `StreamApi`) to answer. Bound every await that can stall with `deadline.run(..)`, derive budgets with `child(..)` and `with_margin(..)`, and give retries attempts from one parent, never a fresh timeout each.
 - **Tests.** Call the handler with `Context::new(test_support::invocation("r-1"), ())` (`expired_invocation` for the deadline path), run the HTTP pipeline with `api.handle(app, test_support::post_json(..), &decode, &handler)`, and an SQS batch with `davidrs::queue::process`.
 - **Local run.** Install with `brew install cargo-lambda/tap/cargo-lambda` or `pip3 install cargo-lambda`. `cargo lambda watch` serves binary crates, not `examples/`, on `:9000`. Map `curl` routes in the function's `Cargo.toml` under `[package.metadata.lambda.watch.router]`, such as `"/orders/{id}" = "orders-get"`; send other triggers a payload with `cargo lambda invoke <function> --data-file event.json`. The emulator always sends a relative deadline of 600000 ms (ten minutes, whatever the deployed timeout: test short deadlines with `test_support`) and adds permissive CORS unless started with `--disable-cors`.

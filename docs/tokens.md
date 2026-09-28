@@ -1,8 +1,10 @@
 # Bearer tokens
 
-[`Verifier`](crate::auth::Verifier) checks a JSON Web Token signed with RS256 against the key set (JWKS) its issuer publishes. A [`VerifierConfig`](crate::auth::VerifierConfig) says what an acceptable token is: the exact issuer, the accepted audiences, claims that must equal a fixed value, the clock leeway for `exp`, and how often the key set may be fetched again. A successful check returns [`VerifiedClaims`](crate::auth::VerifiedClaims); a failed one returns a [`VerifyError`](crate::auth::VerifyError). The verifier authenticates and stops there: who may do what is your [`Policy`](crate::http::Policy).
+Enable `auth`. It brings `client`, which fetches the key set. [`Verifier`](crate::auth::Verifier) checks an RS256 JSON Web Token against the JWKS its issuer publishes. Use it when nothing in front of the function has already done that: a Function URL with auth type `NONE`, an MCP server, a direct invocation, or a second check you have chosen to keep. Build one verifier in `main` and keep it for the life of the process. The key cache lives there, so a warm invocation does not fetch the key set again.
 
-Behind an API Gateway authorizer, the token is already verified before the function runs, and [`Access`](crate::http::access::Access) reads its claims without verifying anything again ([tokens the gateway already verified](crate::guide::access#tokens-the-gateway-already-verified)): prefer that wherever a gateway can sit in front. The verifier is for Function URLs, MCP servers and direct invocations, and for a second check behind a gateway; the [security chapter](crate::guide::aws_security) compares the two.
+If API Gateway or a Cognito authorizer already verified the token, do not verify it again. [`Access`](crate::http::access::Access) reads the claims the authorizer wrote. A second verification adds a key fetch and proves nothing new. That path is [tokens the gateway already verified](crate::guide::access#tokens-the-gateway-already-verified). The [security chapter](crate::guide::aws_security) compares the two.
+
+A [`VerifierConfig`](crate::auth::VerifierConfig) says what an acceptable token is: the exact issuer, the accepted audiences, claims that must equal a fixed value, the clock leeway for `exp`, and how often the key set may be fetched again. A successful check returns [`VerifiedClaims`](crate::auth::VerifiedClaims). A failed one returns a [`VerifyError`](crate::auth::VerifyError). Answer every variant with the same `401`. The variant is for a log line you write on purpose. The pipeline does not log it, and the client must not see it.
 
 ## Why it exists
 
@@ -127,3 +129,14 @@ assert_eq!(VerifyError::UnknownKey.to_string(), "no key matched the token");
 - **No revocation.** A token stays valid until it expires. A key removed from the key set stays trusted until an unknown `kid` causes the next refresh. Amazon Cognito documents the same for its revoked tokens — they still verify by signature and expiry — so keep access tokens short-lived.
 - **No background refresh.** The key set is fetched only by `load` and by an unknown `kid`, never on a timer.
 - **No authorization.** Roles, groups, tenants and permissions are claims the verifier does not interpret. Map them into your policy's scope.
+
+## If every token is refused, or the wrong ones are accepted
+
+| What you see | What it usually means | What to change |
+| --- | --- | --- |
+| The cold start fails in [`Verifier::load`](crate::auth::Verifier::load) | The JWKS URL is wrong, unreachable, or the document has no usable RSA key | Fix the URL before you deploy. Use [`Verifier::deferred`](crate::auth::Verifier::deferred) only when many invocations never see a token and a bad URL should fail the first caller instead of startup. |
+| `401` on a token that works in another application of the same issuer | The audience does not match | [`with_audiences`](crate::auth::VerifierConfig::with_audiences) must list this resource. A verifier with no audiences accepts nothing. Cognito access tokens often have `client_id` and no `aud`; the verifier matches `client_id` in that case, as API Gateway does. |
+| `401`, and [`VerifyError`](crate::auth::VerifyError) says the algorithm | The token is not RS256 | `ES256`, `PS256`, `EdDSA` and HMAC tokens are refused. This includes `none` and `HS256`. |
+| A revoked Cognito token still verifies | Revocation is not part of signature checks | Keep access tokens short. Cognito documents the same limitation for API Gateway authorizers. |
+| The identity provider is flooded with JWKS requests | Each unknown `kid` used to trigger its own fetch | Concurrent misses share one fetch, and a failed fetch waits out a cooldown of at most five seconds. If you still see a fetch per request, the verifier is being built inside the handler instead of in `main`. |
+| The client receives a `401` whose body explains which check failed | The policy put [`VerifyError`](crate::auth::VerifyError) in the public message | Put it in [`Failure::with_detail`](crate::http::Failure::with_detail) and return one `401` for every variant. |

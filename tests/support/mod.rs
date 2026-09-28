@@ -4,6 +4,7 @@
 //! unused helpers are expected.
 #![allow(dead_code, unreachable_pub)]
 
+pub mod env;
 pub mod server;
 #[cfg(feature = "auth")]
 pub mod tokens;

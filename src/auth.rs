@@ -18,7 +18,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub use claims::VerifiedClaims;
 pub use jwks::{MAX_JWKS_BYTES, MAX_KEYS};
-pub use verify::{VerifyError, MAX_TOKEN_BYTES};
+pub use verify::{MAX_TOKEN_BYTES, VerifyError};
 
 use crate::RuntimeError;
 

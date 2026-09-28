@@ -1,5 +1,7 @@
 # Partial responses
 
+Enable `http`. A list that shows a name and a price should not download every nested object of every row, and it should not invent its own `fields` parser. [`Mask`](crate::http::fields::Mask) is that parser. The route passes it the query value, so the parameter can have another name. When a field is expensive, use all three steps: [`wants`](crate::http::fields::Mask::wants) skips a lookup, [`stored`](crate::http::fields::Mask::stored) reads fewer attributes or columns, and [`apply`](crate::http::fields::Mask::apply) sends exactly what was asked. `apply` alone still reads the whole record and only trims the JSON afterwards.
+
 ## What it is
 
 [`Mask`](crate::http::fields::Mask) is a parsed `fields` value: the parts of a JSON response a client asked for. It reduces a built response to those parts with [`apply`](crate::http::fields::Mask::apply), and tells a route which parts it may skip building with [`wants`](crate::http::fields::Mask::wants).

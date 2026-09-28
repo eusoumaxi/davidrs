@@ -4,11 +4,11 @@
 //! [`ErrorRenderer::render`] returns a response unconditionally and the shared
 //! [`literal`] builder has a format-neutral fallback.
 
-use lambda_http::http::{header, StatusCode};
+use lambda_http::http::{StatusCode, header};
 use lambda_http::{Body, Response};
 
 use super::failure::Failure;
-use super::response::{apply_headers, HttpResponse};
+use super::response::{HttpResponse, apply_headers};
 
 /// Renders failures into responses: the wire shape of every error an
 /// endpoint returns.
@@ -85,7 +85,7 @@ impl ErrorRenderer for PlainErrors {
 
 #[cfg(feature = "problem")]
 mod problem {
-    use super::{apply_headers, literal, ErrorRenderer, Failure, HttpResponse};
+    use super::{ErrorRenderer, Failure, HttpResponse, apply_headers, literal};
 
     /// An RFC 9457 `application/problem+json` renderer, with the failure's
     /// headers.
@@ -125,12 +125,11 @@ mod problem {
         fn render(&self, failure: &Failure) -> HttpResponse {
             let mut details = problem_details::ProblemDetails::from_status_code(failure.status())
                 .with_detail(failure.public_message());
-            if let Some(base) = &self.type_base {
-                if let Ok(uri) =
+            if let Some(base) = &self.type_base
+                && let Ok(uri) =
                     format!("{base}{}", failure.code()).parse::<lambda_http::http::Uri>()
-                {
-                    details = details.with_type(uri);
-                }
+            {
+                details = details.with_type(uri);
             }
             let body = serde_json::to_string(&details)
                 .unwrap_or_else(|_| r#"{"title":"Internal Server Error","status":500}"#.to_owned());

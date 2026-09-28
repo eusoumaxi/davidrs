@@ -23,9 +23,9 @@
 use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 
+use aws_sdk_dynamodb::Client;
 use aws_sdk_dynamodb::error::{ProvideErrorMetadata, SdkError};
 use aws_sdk_dynamodb::types::{AttributeValue, KeysAndAttributes, WriteRequest};
-use aws_sdk_dynamodb::Client;
 use base64::Engine as _;
 use serde_json::{Map, Value};
 use tracing::Instrument as _;

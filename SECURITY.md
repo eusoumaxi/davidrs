@@ -6,12 +6,12 @@ Security fixes go to the latest release. Before 1.0, that is the latest `0.x` mi
 
 ## Reporting a vulnerability
 
-Report vulnerabilities privately, never in a public issue or pull request:
+Report vulnerabilities privately, never in a public issue or pull request. A report we can act on names the version and the Cargo features, says what an attacker can do that they should not be able to do, and includes the smallest code or request that you have already run. A scanner finding or a model suggestion that you have not reproduced is closed without review. Do not include real credentials, tokens or customer data in the report or in a test fixture.
+
+Send it:
 
 - through GitHub's [private vulnerability reporting](https://github.com/eusoumaxi/davidrs/security/advisories/new), or
 - by email to <hi@eusoumaxi.com>.
-
-Include the affected version and features, what an attacker can do, and the smallest code or request that reproduces it. Do not include real credentials, tokens or customer data in a report or a test fixture. A report must describe a problem you have reproduced; unverified output from a scanner or an AI tool is closed without review.
 
 ## What happens next
 
@@ -40,7 +40,7 @@ Each of these is enforced in code and covered by a test in `tests/`.
 - **Tokens stay with the service they were issued for.** An MCP OpenAPI tool forwards the caller's `Authorization` header only when `forward_caller_token` is set, and only to the configured base URL's host; a fixed credential set with `header` is marked sensitive and never appears in `Debug` output.
 - **Page tokens can be signed.** `encode_cursor_signed` binds a page token to an HMAC-SHA256 under a server secret; `decode_cursor_signed` verifies it in constant time and treats an edited or forged token as "first page".
 - **Test support has no bypass.** The `test-support` feature builds synthetic invocations and requests only. Nothing in the crate can construct a `Grant` or `VerifiedClaims` without the checks that produce them.
-- **No `unsafe`.** `unsafe_code = "forbid"`; dependencies are checked with `cargo deny` for advisories, licences and sources.
+- **No `unsafe`.** The library is `#![forbid(unsafe_code)]`, which no attribute can lift. The only unsafe code in the repository is the tests' helper that writes environment variables, under a lock. Dependencies are checked with `cargo deny` for advisories, licences and sources.
 
 ## What it leaves to the application
 

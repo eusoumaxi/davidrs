@@ -1,8 +1,18 @@
 # Security on AWS: the platform first
 
+This chapter is about the front door, not the handler. It is long because the products and the limits are easy to misremember, so you do not need to read it in order.
+
+1. Read [The principle](#the-principle) and [The recommended architecture](#the-recommended-architecture) once.
+2. Open [Use cases, end to end](#use-cases-end-to-end) and follow only the case you are deploying.
+3. Use [Who does what](#who-does-what) when you are choosing between a firewall rule and a check in the function.
+4. Read [Lambda Function URLs](#lambda-function-urls-explained) or [API Gateway](#api-gateway-explained) only for the front door you are using.
+5. Read [What `davidrs` does in every setup](#what-davidrs-does-in-every-setup) before you delete a check on the grounds that the gateway already does it.
+
+Every limit quoted here comes from the AWS documentation linked beside it. Limits change. Open the link before you rely on a number.
+
 Let AWS enforce everything it can before your code runs. The recommended front door for a function built with `davidrs` is **Amazon API Gateway with AWS WAF and Amazon Cognito**, behind Amazon CloudFront where a custom domain, caching or a WAF on an HTTP API is needed. The gateway and the firewall verify tokens, throttle, rate-limit, inspect request shape, reputation and bots, and a request they reject never invokes the function. `davidrs` can verify tokens and count requests itself, and the crate still recommends the AWS services for those jobs: its own rate limiting exists for the **business quotas per operation, tenant or user** a firewall cannot express, and its token verification for the places where **no authorizer sits in front** (Function URLs, MCP servers, direct invocations) and as defense in depth everywhere else.
 
-This chapter says, for each concern, what AWS does, what `davidrs` does, why the crate does it anyway, and what to configure. Every limit quoted here comes from the AWS documentation linked next to it; limits change, so check the link before you rely on a number.
+The table **Who does what** says, for each concern, what AWS does, what `davidrs` does, why the crate does it anyway, and what to configure.
 
 ## The principle
 

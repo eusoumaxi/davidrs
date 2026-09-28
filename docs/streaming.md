@@ -1,6 +1,8 @@
 # Streaming
 
-Two features cover a response that is written while the work runs. [`StreamApi`](crate::http::stream::StreamApi) (`http-stream`) is the streamed HTTP pipeline: one handler answers JSON or server-sent events through a Lambda response stream. [`StreamBody`](crate::streaming::StreamBody) (`streaming`) is the body underneath it: a stream that owns the task producing it. `http-stream` enables `streaming`.
+Two features cover a response that is written while the work runs. [`StreamApi`](crate::http::stream::StreamApi) (`http-stream`) is the HTTP pipeline: one handler answers JSON or server-sent events through a Lambda response stream. [`StreamBody`](crate::streaming::StreamBody) (`streaming`) is the body underneath it, and it owns the task that produces the bytes. `http-stream` enables `streaming`. Enable `streaming` alone only when you drive the Lambda response stream yourself and do not want the HTTP pipeline.
+
+A buffered [`Api`](crate::http::Api) stops being the right tool past the gateway's integration timeout (30 seconds on an HTTP API) or past a 6 MB body. The front door is then a Function URL in `RESPONSE_STREAM` mode, or a REST API method with the `STREAM` integration. Dropping the body, which is what happens when the client goes away, cancels the producer. The producer's own deadline stops it even while a client keeps reading. Origin access control, the `x-amz-content-sha256` header, and why CORS for a streamed route is configured here rather than on the URL are in [Deployment](crate::guide::deployment) and [Security on AWS](crate::guide::aws_security).
 
 ## The streamed pipeline
 
@@ -24,7 +26,7 @@ A hand-written streamed handler tends to get the edges subtly wrong. It echoes w
 
 Steps 5 to 7 run under the invocation deadline minus a margin, one second by default ([`StreamApi::margin`](crate::http::stream::StreamApi::margin)), because a streamed response still has to flush its last frames after the handler returns. A handler still running when the margin is reached gets a `504` `ERROR_TIMEOUT`.
 
-Every response, success or failure, then gets `Vary: Origin, Accept`, the headers added by [`StreamApi::finalize`](crate::http::stream::StreamApi::finalize), and, for an allowed origin, the CORS headers.
+Every response, success or failure, then gets `Vary: Origin, Accept`, the headers added by [`StreamApi::finalize`](crate::http::stream::StreamApi::finalize), and, for an allowed origin, the CORS headers. Its `Set-Cookie` headers, from the handler or the finalizer, then move to the stream's list of cookies, which is where a Lambda response stream carries them.
 
 Decoding and admission are the handler's, not stages of the pipeline. A streamed endpoint often decides what to count only once it knows the caller (an anonymous request spends a budget a signed-in one does not), which a stage before the policy cannot express. The handler reads what it needs from the `StreamRequest`: `view()` for the bounded typed readers, `native()` for the request itself, `path()`, `representation()` and `wants_events()`, and `event()` for the payload exactly as delivered, for what the typed request re-derives differently, such as a Function URL's own decoded query map.
 

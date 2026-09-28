@@ -63,12 +63,12 @@ pub use api::{Api, Finalizer};
 pub use failure::{ErrorCatalog, ErrorDefinition, Failure, FailureKind, INTERNAL_MESSAGE};
 pub use policy::{Admission, AdmitAll, Policy, Public};
 pub use rate_limit::{Counter, RateLimit, RateLimitConfig, RateLimited};
-pub use render::{literal, ErrorRenderer, PlainErrors};
-pub use request::{Request, DEFAULT_BODY_LIMIT};
+pub use render::{ErrorRenderer, PlainErrors, literal};
+pub use request::{DEFAULT_BODY_LIMIT, Request};
 pub use response::{HttpResponse, IntoResponse, Json, NoContent};
 
-pub use lambda_http::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 pub use lambda_http::Body;
+pub use lambda_http::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 
 #[cfg(feature = "problem")]
 pub use render::ProblemErrors;

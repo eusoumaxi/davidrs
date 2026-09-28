@@ -8,15 +8,15 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use aws_sdk_eventbridge::Client;
 use aws_sdk_eventbridge::config::retry::RetryConfig;
 use aws_sdk_eventbridge::config::{
     AsyncSleep, BehaviorVersion, Credentials, HttpClient, Region, SharedAsyncSleep, Sleep,
 };
-use aws_sdk_eventbridge::Client;
-use aws_smithy_http_client::test_util::{infallible_client_fn, NeverClient};
+use aws_smithy_http_client::test_util::{NeverClient, infallible_client_fn};
 use davidrs::eventbridge::{self, EntryOutcome, EventRoute};
 use davidrs::{Deadline, RuntimeError};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const ORDER_CREATED: EventRoute = EventRoute {
     source: "example.orders",

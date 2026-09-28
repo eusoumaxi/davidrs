@@ -1,5 +1,9 @@
 # Validation
 
+Enable `http`. [`http::schema`](crate::http::schema) checks a decoded JSON value and collects every problem into one `400`, so a form can mark every invalid field at once. It is ordinary code, not a derive.
+
+If the body already deserializes into a struct and you only need Garde rules (`length`, `range`, `dive`), use [`Request::validated_json`](crate::http::Request::validated_json) with the `validate` feature, described in the [HTTP chapter](crate::guide::http). That failure says validation failed and does not name the field. Use this module when the client needs one message such as `name: must be at least 1 character long; quantity: must be at most 100`.
+
 ## What it is
 
 [`http::schema`](crate::http::schema) checks the structure of a decoded JSON request and collects every problem in one [`Issues`](crate::http::schema::Issues) value. [`into_result`](crate::http::schema::Issues::into_result) is `Ok` when nothing was recorded, and otherwise one `400` whose message lists every issue as `path: message`, separated by `; `.

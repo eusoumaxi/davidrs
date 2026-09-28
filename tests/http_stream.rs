@@ -6,21 +6,21 @@
 //! `tests/lambda_loop.rs`.
 #![cfg(feature = "http-stream")]
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use davidrs::http::stream::{
-    self, negotiate, sse_frame, Cors, Representation, StreamApi, StreamRequest, StreamResponse,
-    EVENT_STREAM,
+    self, Cors, EVENT_STREAM, Representation, StreamApi, StreamRequest, StreamResponse, negotiate,
+    sse_frame,
 };
 use davidrs::http::{
-    codes, literal, Body, ErrorRenderer, Failure, FailureKind, Method, PlainErrors, Policy, Public,
-    Request, StatusCode,
+    Body, ErrorRenderer, Failure, FailureKind, Method, PlainErrors, Policy, Public, Request,
+    StatusCode, codes, literal,
 };
 use davidrs::{Context, Deadline, Invocation};
 use lambda_runtime::LambdaEvent;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const APP: &str = "https://app.example.com";
 
@@ -317,6 +317,23 @@ async fn the_finalizer_runs_on_success_and_failure_alike() {
     assert_eq!(header(&success, "x-request-id"), Some("req-1"));
     assert_eq!(status(&failure), StatusCode::METHOD_NOT_ALLOWED);
     assert_eq!(header(&failure, "x-request-id"), Some("req-1"));
+}
+
+/// A Lambda response stream carries cookies in its own list, not as headers.
+#[tokio::test]
+async fn set_cookie_headers_move_to_the_stream_cookies() {
+    let api = api().finalize(|_, headers| {
+        headers.append("set-cookie", "session=abc; Secure".parse().expect("cookie"));
+        headers.append("set-cookie", "theme=dark".parse().expect("cookie"));
+    });
+    let response = api
+        .handle(Arc::new(()), event("GET", json!({})), &echo)
+        .await;
+    assert_eq!(header(&response, "set-cookie"), None);
+    assert_eq!(
+        response.metadata_prelude.cookies,
+        ["session=abc; Secure", "theme=dark"]
+    );
 }
 
 #[tokio::test]

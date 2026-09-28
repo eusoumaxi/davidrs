@@ -73,16 +73,16 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use lambda_http::http::{header, HeaderMap, HeaderValue, Method, StatusCode};
-use serde_json::{json, Map, Value};
+use lambda_http::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
+use serde_json::{Map, Value, json};
 
 pub use protocol::PROTOCOL_VERSION;
-pub use tool::{Tool, INVALID_ARGUMENTS};
+pub use tool::{INVALID_ARGUMENTS, Tool};
 
 use self::protocol::{Message, Reply};
 use crate::http::{
-    codes, literal, Admission, AdmitAll, Api, ErrorRenderer, Failure, HttpResponse, Policy,
-    Request, DEFAULT_BODY_LIMIT,
+    Admission, AdmitAll, Api, DEFAULT_BODY_LIMIT, ErrorRenderer, Failure, HttpResponse, Policy,
+    Request, codes, literal,
 };
 use crate::{Context, Invocation, RuntimeError};
 
@@ -468,7 +468,7 @@ where
                 return Err(invalid(
                     StatusCode::BAD_REQUEST,
                     "params.arguments must be an object",
-                ))
+                ));
             }
         };
         let deadline = invocation.deadline.with_margin(CALL_MARGIN);

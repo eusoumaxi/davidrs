@@ -6,6 +6,8 @@
 //! variables, or install the global subscriber, hold [`ENV`].
 #![cfg(feature = "otel")]
 
+mod support;
+
 use std::fmt;
 use std::net::UdpSocket;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -17,15 +19,15 @@ use davidrs::telemetry::{agent_endpoint, join_trace, record_status, tracer_provi
 use davidrs::{Deadline, Invocation};
 use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
 use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
-use opentelemetry_proto::tonic::common::v1::any_value::Value;
 use opentelemetry_proto::tonic::common::v1::KeyValue;
+use opentelemetry_proto::tonic::common::v1::any_value::Value;
 use opentelemetry_proto::tonic::trace::v1::span::SpanKind;
 use prost::Message as _;
 use tracing::field::Field;
 use tracing::{Event, Subscriber};
+use tracing_subscriber::Layer;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::{Context, SubscriberExt as _};
-use tracing_subscriber::Layer;
 
 /// Serializes the tests that touch process-wide state.
 static ENV: Mutex<()> = Mutex::new(());
@@ -120,14 +122,14 @@ fn the_service_name_is_otel_service_name_then_the_function_name_then_the_fallbac
         receive(&agent)
     };
 
-    std::env::remove_var("OTEL_SERVICE_NAME");
-    std::env::remove_var("AWS_LAMBDA_FUNCTION_NAME");
+    support::env::remove("OTEL_SERVICE_NAME");
+    support::env::remove("AWS_LAMBDA_FUNCTION_NAME");
     assert_eq!(
         service_name(&traced("outside-lambda")),
         Some(&string("fallback"))
     );
 
-    std::env::set_var("AWS_LAMBDA_FUNCTION_NAME", "orders-function");
+    support::env::set("AWS_LAMBDA_FUNCTION_NAME", "orders-function");
     let in_lambda = traced("in-lambda");
     assert_eq!(service_name(&in_lambda), Some(&string("orders-function")));
     let resource = in_lambda.resource_spans[0]
@@ -139,11 +141,11 @@ fn the_service_name_is_otel_service_name_then_the_function_name_then_the_fallbac
         Some(&string("orders-function"))
     );
 
-    std::env::set_var("OTEL_SERVICE_NAME", "orders");
+    support::env::set("OTEL_SERVICE_NAME", "orders");
     assert_eq!(service_name(&traced("named")), Some(&string("orders")));
 
-    std::env::remove_var("OTEL_SERVICE_NAME");
-    std::env::remove_var("AWS_LAMBDA_FUNCTION_NAME");
+    support::env::remove("OTEL_SERVICE_NAME");
+    support::env::remove("AWS_LAMBDA_FUNCTION_NAME");
 }
 
 /// Nothing listens once the agent is gone, and the operating system refuses
@@ -166,9 +168,9 @@ fn an_endpoint_that_is_not_an_address_is_an_error() {
 #[test]
 fn the_agent_endpoint_is_aws_xray_daemon_address_or_the_default() {
     let _env = ENV.lock().unwrap_or_else(PoisonError::into_inner);
-    std::env::set_var("AWS_XRAY_DAEMON_ADDRESS", "169.254.79.129:2000");
+    support::env::set("AWS_XRAY_DAEMON_ADDRESS", "169.254.79.129:2000");
     assert_eq!(agent_endpoint(), "169.254.79.129:2000");
-    std::env::remove_var("AWS_XRAY_DAEMON_ADDRESS");
+    support::env::remove("AWS_XRAY_DAEMON_ADDRESS");
     assert_eq!(agent_endpoint(), "127.0.0.1:2000");
 }
 
@@ -219,14 +221,14 @@ fn a_disabled_span_is_left_alone() {
 #[test]
 fn init_exports_invocation_spans_as_server_spans_of_the_lambda_trace() {
     let _env = ENV.lock().unwrap_or_else(PoisonError::into_inner);
-    std::env::remove_var("RUST_LOG");
+    support::env::remove("RUST_LOG");
     let agent = agent();
 
-    std::env::set_var("AWS_XRAY_DAEMON_ADDRESS", "not-an-address");
+    support::env::set("AWS_XRAY_DAEMON_ADDRESS", "not-an-address");
     assert!(davidrs::telemetry::init("traces-test").is_err());
-    std::env::set_var("AWS_XRAY_DAEMON_ADDRESS", address(&agent));
+    support::env::set("AWS_XRAY_DAEMON_ADDRESS", address(&agent));
     let guard = davidrs::telemetry::init("traces-test").expect("installed");
-    std::env::remove_var("AWS_XRAY_DAEMON_ADDRESS");
+    support::env::remove("AWS_XRAY_DAEMON_ADDRESS");
     assert_eq!(format!("{guard:?}"), "Guard { traces: true }");
 
     let deadline = Deadline::after(Duration::from_secs(5));

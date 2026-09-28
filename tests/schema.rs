@@ -4,12 +4,12 @@
 #![cfg(feature = "http")]
 
 use davidrs::http::schema::{
-    check_array_size, check_number, check_unknown_keys, check_unknown_keys_in, expect_array,
-    expect_bool, expect_number, expect_object, expect_string, expect_string_min, join, type_name,
-    Issues, NumberRule,
+    Issues, NumberRule, check_array_size, check_number, check_unknown_keys, check_unknown_keys_in,
+    expect_array, expect_bool, expect_number, expect_object, expect_string, expect_string_min,
+    join, type_name,
 };
 use davidrs::http::{FailureKind, StatusCode};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// The rendered message of what `issues` collected.
 fn message(issues: Issues) -> String {
@@ -98,13 +98,15 @@ fn a_shape_failure_names_what_was_expected_and_what_arrived() {
     assert!(expect_string(Some(&json!(1)), "name", &mut issues).is_none());
     assert!(expect_bool(Some(&json!("yes")), "gift", &mut issues).is_none());
     assert!(expect_array(Some(&json!({})), "lines", &mut issues).is_none());
-    assert!(expect_number(
-        Some(&json!(true)),
-        "quantity",
-        &NumberRule::default(),
-        &mut issues
-    )
-    .is_none());
+    assert!(
+        expect_number(
+            Some(&json!(true)),
+            "quantity",
+            &NumberRule::default(),
+            &mut issues
+        )
+        .is_none()
+    );
     assert!(issues.aborted_since(0));
     assert_eq!(
         message(issues),

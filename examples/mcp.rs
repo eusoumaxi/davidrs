@@ -5,12 +5,12 @@
 use std::sync::Arc;
 
 use davidrs::client::{self, Limits};
-use davidrs::http::access::{Access, Claims, Grant};
 use davidrs::http::Failure;
+use davidrs::http::access::{Access, Claims, Grant};
 use davidrs::mcp::openapi::OpenApi;
 use davidrs::mcp::{ProtectedResource, Server, Tool};
-use davidrs::{required_env, Context, RuntimeError};
-use serde_json::{json, Value};
+use davidrs::{Context, RuntimeError, required_env};
+use serde_json::{Value, json};
 
 /// The API the OpenAPI tools call.
 const DOCUMENT: &str = r#"{

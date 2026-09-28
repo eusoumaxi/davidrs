@@ -7,7 +7,7 @@
 
 use std::time::{Duration, Instant};
 
-use davidrs::{error_chain, Context, Deadline, Invocation, RuntimeError};
+use davidrs::{Context, Deadline, Invocation, RuntimeError, error_chain};
 
 fn budget(duration: Duration) -> Deadline {
     Deadline::after(duration)

@@ -1,6 +1,6 @@
 # Testing
 
-This chapter has two parts: how to test your own functions, and how this crate verifies itself.
+This chapter has two parts. The first is how to test a function you wrote, without an AWS account. The second is how this crate verifies itself, which is what `scripts/check.sh` runs.
 
 ## Testing your handlers
 
@@ -64,6 +64,7 @@ scripts/check.sh coverage     # line coverage, with a floor
 | `lint` | `rustfmt`, and `clippy -D warnings` with all features and with none, including the documentation lints |
 | `test` | every test and doctest with all features |
 | `features` | each feature alone compiles cleanly and passes its tests, so no feature silently depends on another |
+| `msrv` | everything compiles with the oldest supported Rust, `rust-version` in `Cargo.toml` |
 | `docs` | the API reference and this guide build with no warnings, and every link resolves |
 | `package` | the crate packages and builds from its own files |
 | `spelling` | code, comments and documentation have no known misspellings (`typos`) |

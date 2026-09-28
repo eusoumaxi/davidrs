@@ -64,7 +64,7 @@ pub async fn run<App, T, E, H, F>(app: Arc<App>, handler: H) -> Result<(), Runti
 where
     App: Send + Sync + 'static,
     T: serde::de::DeserializeOwned + Send,
-    E: std::fmt::Display,
+    E: Into<crate::runtime::Diagnostic>,
     H: Fn(Arc<App>, Event<T>, Context<()>) -> F + Send + Sync,
     F: Future<Output = Result<(), E>> + Send,
 {

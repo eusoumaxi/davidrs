@@ -1,6 +1,6 @@
 # Deployment
 
-From source to a running function: the tools, how to organize a project with many functions, what the packages weigh, and how a function connects to API Gateway, Function URLs, CloudFront, SQS and EventBridge.
+From a crate that already runs on your machine to a function in AWS: Cargo Lambda, a workspace of one binary per operation, what those binaries weigh, and the setting on each front door that makes the crate's report visible to the platform. What WAF, Cognito and API Gateway should refuse before an invocation exists is [Security on AWS](crate::guide::aws_security).
 
 ## Tools
 
@@ -188,3 +188,15 @@ new RustFunction(this, "OrdersGet", {
 ```
 
 With AWS SAM, set `BuildMethod: rust-cargolambda` in the function's `Metadata`. With Terraform or any other tool, deploy the zip that `cargo lambda build --release --arm64 --output-format zip` writes.
+
+## If the deploy looks healthy and the behaviour is wrong
+
+| What you see | What it usually means | What to change |
+| --- | --- | --- |
+| The workspace build succeeds and `cargo lambda build --package <function>` fails | Another member enabled a feature this function forgot | `cargo check -p <function>` before you deploy |
+| SQS deletes messages the handler never finished, or replays messages that succeeded | `ReportBatchItemFailures` is off, so Lambda ignores the partial-batch response | Turn it on in the event source mapping. Confirm the queue has a redrive policy. |
+| Traces never appear for an HTTP API, a Function URL or an SQS consumer | Tracing mode is `PassThrough`, so the invocation is not sampled | Set tracing to `Active` on the function |
+| A cold start fails immediately, naming a variable | `required_env` or `sdk_config` ran in `main` | Set the variable on the function. That failure is earlier than a request error, which is what you want. |
+| The client sees a gateway `502` and your error renderer did not run | The function was killed at its timeout, or the handler returned an invocation error | Keep the function timeout below the gateway integration timeout. Return [`Failure`](crate::http::Failure) from an HTTP handler. |
+| A panic takes the whole sandbox down and the next call is a cold start | `panic = "abort"` in the release profile | Return a [`Failure`](crate::http::Failure) or a [`RuntimeError`](crate::RuntimeError). Do not panic on a request path. |
+| A Function URL has no authorizer, no WAF and no throttle | That is what a Function URL is | Put CloudFront and a web ACL in front, cap it with reserved concurrency, and verify tokens in the function. The [security chapter](crate::guide::aws_security) is the checklist. |

@@ -8,16 +8,16 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use aws_sdk_dynamodb::Client;
 use aws_sdk_dynamodb::config::retry::RetryConfig;
 use aws_sdk_dynamodb::config::{
     AsyncSleep, BehaviorVersion, Credentials, Region, SharedAsyncSleep, Sleep,
 };
 use aws_sdk_dynamodb::types::{AttributeValue, PutRequest, WriteRequest};
-use aws_sdk_dynamodb::Client;
 use aws_smithy_http_client::test_util::infallible_client_fn;
-use davidrs::dynamo::{self, Item, PageLimits, Stop};
 use davidrs::Deadline;
-use serde_json::{json, Value};
+use davidrs::dynamo::{self, Item, PageLimits, Stop};
+use serde_json::{Value, json};
 
 /// One request the fake service received.
 #[derive(Debug, Clone)]
@@ -745,14 +745,14 @@ mod window {
 
     use davidrs::http::rate_limit::DynamoWindow;
     use davidrs::http::{Counter as _, RateLimitConfig};
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
-    use super::{calls, dynamodb, error, Call};
+    use super::{Call, calls, dynamodb, error};
 
     const SEARCH: RateLimitConfig = RateLimitConfig::new("search", 60, Duration::from_secs(300));
 
     /// A store that answers every count with `count`.
-    fn counting(count: &str) -> impl Fn(&str, &Value) -> (u16, Value) {
+    fn counting(count: &str) -> impl Fn(&str, &Value) -> (u16, Value) + use<> {
         let answer = json!({ "Attributes": { "requestCount": { "N": count } } });
         move |_, _| (200, answer.clone())
     }

@@ -8,9 +8,9 @@
 
 use std::io::Read;
 
+use flate2::Compression;
 use flate2::read::MultiGzDecoder;
 use flate2::write::GzEncoder;
-use flate2::Compression;
 
 use crate::RuntimeError;
 

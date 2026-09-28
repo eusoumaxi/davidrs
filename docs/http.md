@@ -1,6 +1,8 @@
 # HTTP
 
-[`Api`](crate::http::Api) serves one route from API Gateway (HTTP API, or REST API with the `apigw-rest` feature) or a Lambda Function URL. It is configured once with an operation name, a [`Policy`](crate::http::Policy) and an [`ErrorRenderer`](crate::http::ErrorRenderer); every invocation then runs the same fixed pipeline, under one deadline, and every failure leaves through the same renderer. The handler receives the shared state, a decoded input and a [`Context`](crate::Context), and returns a value or a [`Failure`](crate::http::Failure).
+[`Api`](crate::http::Api) serves one route from API Gateway (an HTTP API, a REST API with the `apigw-rest` feature, or an Application Load Balancer with `alb`) or a Lambda Function URL. Enable `http`. Add `validate` for Garde checks on the body, and `problem` when the error body should be RFC 9457 problem details. Streamed responses are [Streaming](crate::guide::streaming). Who may call, and how many times, is [Access control](crate::guide::access). [Getting started](crate::guide::getting_started) builds the same shape with a path parameter and runs it locally.
+
+The pipeline is configured once, with an operation name, a [`Policy`](crate::http::Policy) and an [`ErrorRenderer`](crate::http::ErrorRenderer). Every invocation then runs the same steps, under one deadline, and every failure leaves through the same renderer. The handler receives the shared state, a decoded input and a [`Context`](crate::Context), and returns a value or a [`Failure`](crate::http::Failure). One `Api` does not route. Several operations are several functions, unless they truly share one decoder. The program under [The pipeline](#the-pipeline) is a complete function. The tables after it are what you need when a status, a header or a decoder is wrong.
 
 ## Why it exists
 
@@ -120,6 +122,7 @@ The decoder and the policy receive a [`Request`](crate::http::Request), a borrow
 | [`json`](crate::http::Request::json) | the body as `T` | `413`, `415`, `400 ERROR_MALFORMED_BODY` |
 | [`json_bounded`](crate::http::Request::json_bounded) | the same, under a tighter limit | the same |
 | [`json_text`](crate::http::Request::json_text) | the body as UTF-8, for your own decoder | `413`, `415`, `400` |
+| [`form`](crate::http::Request::form) | an `application/x-www-form-urlencoded` body as `T` | `413`, `415`, `400 ERROR_MALFORMED_BODY` |
 | [`raw_body`](crate::http::Request::raw_body) | the exact bytes, for a signature | — |
 | [`media_type`](crate::http::Request::media_type) | `Content-Type`, lowercased, without parameters | — |
 | [`source_ip`](crate::http::Request::source_ip) | the gateway's `sourceIp`, or `"unknown"` | — |
@@ -158,7 +161,7 @@ let tight = request.json_bounded::<Note>(8).unwrap_err();
 assert_eq!(tight.status().as_u16(), 413);
 ```
 
-Reach for [`json_text`](crate::http::Request::json_text) when an application decoder needs the text, for [`raw_body`](crate::http::Request::raw_body) when a policy verifies an HMAC over the exact bytes, for [`query_pairs`](crate::http::Request::query_pairs) when a list arrives as `?tag=a&tag=b`, and for [`source_ip`](crate::http::Request::source_ip) as a rate-limit key.
+Reach for [`form`](crate::http::Request::form) when an HTML form, a webhook or an OAuth client posts `application/x-www-form-urlencoded`, for [`json_text`](crate::http::Request::json_text) when an application decoder needs the text, for [`raw_body`](crate::http::Request::raw_body) when a policy verifies an HMAC over the exact bytes, for [`query_pairs`](crate::http::Request::query_pairs) when a list arrives as `?tag=a&tag=b`, and for [`source_ip`](crate::http::Request::source_ip) as a rate-limit key. Behind an Application Load Balancer (feature `alb`), `source_ip` is the last address of `X-Forwarded-For`, the one the load balancer appends in its default `append` mode.
 
 `source_ip` ignores `X-Forwarded-For` on purpose: trusting a forwarded header needs a proxy policy of the application's own, and without one any caller could choose its own rate-limit key. The view never copies the body and never awaits; for anything it does not expose, [`Request::native`](crate::http::Request::native) returns the underlying request.
 
@@ -479,3 +482,20 @@ Use it for field constraints a type cannot express: lengths, ranges, nested item
 ## Problem details
 
 With the `problem` feature, [`ProblemErrors`](crate::http::ProblemErrors) renders every failure as RFC 9457 `application/problem+json`, the format standard HTTP clients and API gateways recognise. It is a renderer like any other: pass it to [`Api::new`](crate::http::Api::new) and every failure, from admission to serialization, uses it. The public-message rule holds, so a 5xx `detail` is always `InternalServerError`. It writes no extension members: a client that needs more than `type`, `title`, `status` and `detail` needs a renderer of its own.
+
+## If the response is wrong
+
+The status tells you which step ran. The handler is not always the place to look.
+
+| What the client receives | The step that produced it | What to change |
+| --- | --- | --- |
+| `400` `ERROR_INVALID_PATH` or `ERROR_INVALID_QUERY` | the decoder, before the handler | The path or query does not match the struct. Check the API Gateway route and the field names. |
+| `400` `ERROR_MALFORMED_BODY` | the decoder | The body is empty, not UTF-8, or not JSON. An empty body is a `400`, not a missing optional. |
+| `413` `ERROR_BODY_TOO_LARGE` | the body limit, before the decoder | Raise [`Api::body_limit`](crate::http::Api::body_limit) for this route, or send less. The default is 1 MiB. |
+| `415` `ERROR_UNSUPPORTED_MEDIA_TYPE` | the decoder | The body declared a media type other than JSON. A missing `Content-Type` is accepted. Another type is not, and the body is not parsed. |
+| `401` or `403` | the policy | The handler did not run. Fix the policy, or the authorizer in front of it. Do not re-read the header in the handler. |
+| `404` `ERROR_NOT_FOUND` | `Option::None` from the handler | The lookup found nothing. That is a response, not a missing route. This pipeline does not route. |
+| `500` `FAULT_SERIALIZATION` | serializing a success value | The handler returned `Ok` with a value that cannot be serialized. The client does not receive a `200` with a broken body. |
+| `500` with `errorMessage` `InternalServerError` | the handler, or a converted [`RuntimeError`](crate::RuntimeError) | The public message is fixed. Read the failure's code, and log [`internal_detail`](crate::http::Failure::internal_detail) yourself if you need the cause. |
+| `504` `ERROR_TIMEOUT` | the deadline, 100 ms before Lambda's timeout | The pending step was dropped so the pipeline could still answer. Shorten the work, or raise the function timeout and keep it under the gateway's integration timeout. |
+| API Gateway `502` `{"message":"Internal server error"}` | not this pipeline | The invocation failed before a response was posted, or the function was killed. Return [`Failure`](crate::http::Failure) from the handler. Do not let `main` see a request error. |

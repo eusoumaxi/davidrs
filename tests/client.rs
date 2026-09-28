@@ -9,9 +9,9 @@ mod support;
 use std::error::Error as _;
 use std::time::{Duration, Instant};
 
-use davidrs::client::{self, json_bounded, read_bounded, send_error, Limits};
 use davidrs::RuntimeError;
-use support::server::{reply, Server};
+use davidrs::client::{self, Limits, json_bounded, read_bounded, send_error};
+use support::server::{Server, reply};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 /// A credential an upstream takes in its query string.

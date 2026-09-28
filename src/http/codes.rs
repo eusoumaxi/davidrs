@@ -43,13 +43,13 @@ pub const INVALID_PATH: &str = "ERROR_INVALID_PATH";
 /// `400` — the query string did not deserialize into the target type.
 pub const INVALID_QUERY: &str = "ERROR_INVALID_QUERY";
 
-/// `400` — the body was absent, not UTF-8, or not valid JSON.
+/// `400` — the body was absent, not UTF-8, or not valid JSON or form data.
 pub const MALFORMED_BODY: &str = "ERROR_MALFORMED_BODY";
 
 /// `413` — the body is larger than the configured limit.
 pub const BODY_TOO_LARGE: &str = "ERROR_BODY_TOO_LARGE";
 
-/// `415` — the body declared a representation that is not JSON.
+/// `415` — the body declared a representation the decoder does not read.
 pub const UNSUPPORTED_MEDIA_TYPE: &str = "ERROR_UNSUPPORTED_MEDIA_TYPE";
 
 /// `400` — the body parsed but failed validation.

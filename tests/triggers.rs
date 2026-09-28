@@ -50,12 +50,16 @@ fn a_relative_deadline_of_up_to_fifteen_minutes_is_a_budget_from_now() {
 
 #[test]
 fn an_epoch_already_past_is_an_expired_deadline() {
-    assert!(invocation_from(&context(now_ms() - 1_000))
-        .deadline
-        .is_expired());
-    assert!(invocation_from(&context(15 * 60 * 1_000 + 1))
-        .deadline
-        .is_expired());
+    assert!(
+        invocation_from(&context(now_ms() - 1_000))
+            .deadline
+            .is_expired()
+    );
+    assert!(
+        invocation_from(&context(15 * 60 * 1_000 + 1))
+            .deadline
+            .is_expired()
+    );
 }
 
 #[test]

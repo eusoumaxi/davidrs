@@ -5,15 +5,15 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use aws_sdk_sqs::Client;
 use aws_sdk_sqs::config::retry::RetryConfig;
 use aws_sdk_sqs::config::{
     AsyncSleep, BehaviorVersion, Credentials, Region, SharedAsyncSleep, Sleep,
 };
-use aws_sdk_sqs::Client;
 use aws_smithy_http_client::test_util::infallible_client_fn;
-use davidrs::queue::{Batch, Visibility, MAX_VISIBILITY_TIMEOUT};
 use davidrs::RuntimeError;
-use serde_json::{json, Value};
+use davidrs::queue::{Batch, MAX_VISIBILITY_TIMEOUT, Visibility};
+use serde_json::{Value, json};
 
 const QUEUE_URL: &str = "https://sqs.us-east-1.amazonaws.com/123456789012/orders";
 

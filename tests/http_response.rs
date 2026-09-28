@@ -5,8 +5,8 @@
 #![cfg(feature = "http")]
 
 use davidrs::http::{
-    codes, Body, FailureKind, HeaderMap, HeaderValue, HttpResponse, IntoResponse, Json, NoContent,
-    StatusCode, INTERNAL_MESSAGE,
+    Body, FailureKind, HeaderMap, HeaderValue, HttpResponse, INTERNAL_MESSAGE, IntoResponse, Json,
+    NoContent, StatusCode, codes,
 };
 use serde::{Serialize, Serializer};
 
@@ -43,17 +43,21 @@ fn a_serialization_failure_is_a_sanitized_500() {
     assert_eq!(failure.code(), codes::SERIALIZATION);
     assert_eq!(failure.kind(), FailureKind::Serialization);
     assert_eq!(failure.public_message(), INTERNAL_MESSAGE);
-    assert!(failure
-        .internal_detail()
-        .contains("private upstream detail"));
+    assert!(
+        failure
+            .internal_detail()
+            .contains("private upstream detail")
+    );
 }
 
 #[test]
 fn a_chosen_status_cannot_hide_a_serialization_failure() {
     assert!((StatusCode::CREATED, Json(BROKEN)).into_response().is_err());
-    assert!((StatusCode::CREATED, HeaderMap::new(), Json(BROKEN))
-        .into_response()
-        .is_err());
+    assert!(
+        (StatusCode::CREATED, HeaderMap::new(), Json(BROKEN))
+            .into_response()
+            .is_err()
+    );
 }
 
 #[test]

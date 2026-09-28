@@ -12,6 +12,17 @@ aws-sdk-*               the official AWS SDK for Rust (AWS)
 Lambda Runtime API      the platform
 ```
 
+## Where to read next
+
+| You want to | Read |
+| --- | --- |
+| Build one function and see the JSON it returns | [Getting started](crate::guide::getting_started) |
+| Do one job: a queue, a query, a token check, an MCP server | That chapter, from the [guide index](crate::guide) |
+| Look up a type or a function | The API reference on this site. Each page says what the item does, what it returns, and when it fails. The examples there are the same code the guide walks through. |
+| Copy a whole program | `examples/` in the repository |
+
+You do not have to read the guide in order after the tutorial. Code samples in it are compiled and run as tests, so a sample that is printed matches the crate.
+
 ## Why it exists
 
 Most of a Lambda function is the code around its handler, and every function writes that code again. Each copy tends to get a detail slightly wrong:
@@ -39,9 +50,9 @@ Measured on a production API, comparing the same endpoints before and after they
 
 In a warm invocation that calls an upstream service, nearly all of the time is that call: the framework's own overhead is measured in microseconds.
 
-## Built for business logic — yours and your AI's
+## What you write
 
-A handler is an ordinary async function. It receives the application's shared state, its decoded input and a [`Context`](crate::Context), and returns a value or a failure:
+A handler is an ordinary async function. You do not write the pipeline, the deadline or the error envelope. It receives the application's shared state, its decoded input and a [`Context`](crate::Context), and returns a value or a failure:
 
 ```rust
 use std::sync::Arc;
@@ -76,9 +87,9 @@ async fn hello(app: Arc<App>, input: Hello, _context: Context<()>) -> Result<Jso
 
 Everything around that function — who may call it, what happens when the body is malformed, how a failure looks on the wire, what is logged, when the deadline hits — is configured once in `main` and enforced by the crate. That is what makes the code small enough for a person to review in a minute, and predictable enough for an AI coding agent to write correctly: the agent writes the business rule, and the rules it could get wrong are not in the handler at all. The `davidrs` agent skill (`npx skills add eusoumaxi/davidrs`) teaches coding agents to write functions the way this guide does, and the repository's `AGENTS.md` gives agents working on the crate itself the same rules as `CONTRIBUTING.md` gives people.
 
-## A wrapper, not a Lambda on top of a Lambda
+## One process, the official runtime, your handler
 
-Some ways of running Rust on Lambda add a second layer at run time:
+Some ways of running Rust on Lambda add a second runtime inside the function:
 
 - a web framework served inside the function behind an adapter, so every request makes an extra local HTTP hop into a second server;
 - a proxy or "backend for frontend" function in front of the real one, which doubles the invocations, the cold starts and the bill;
@@ -107,11 +118,11 @@ Some ways of running Rust on Lambda add a second layer at run time:
 **Where the official crates go further.** Use them directly, next to `davidrs`, when a function needs:
 
 - **A trigger without a pipeline here** — S3, SNS, Kinesis or DynamoDB streams, Cognito triggers: [`runtime::run`](crate::runtime::run) accepts their `aws_lambda_events` payloads, as shown below.
-- **ALB, WebSocket or VPC Lattice events.** `davidrs` enables only the API Gateway and Function URL payloads of `lambda_http`.
-- **Concurrent invocations, tower layers or SnapStart hooks.** `lambda_runtime` runs several invocations at once on Lambda Managed Instances and accepts tower layers; the `davidrs` entry points run one invocation at a time, with no layers.
-- **Lambda's advanced logging controls.** `lambda_runtime`'s default subscriber honours `AWS_LAMBDA_LOG_LEVEL` and `AWS_LAMBDA_LOG_FORMAT`; [`telemetry::init`](crate::telemetry::init) reads `RUST_LOG` only.
-- **Form bodies.** `lambda_http`'s `RequestPayloadExt` parses `application/x-www-form-urlencoded`; a decoder reaches it through [`Request::native`](crate::http::Request::native).
-- **A chosen error type.** A non-HTTP handler's error reaches Lambda with its `Display` text and a Rust type name as `errorType`; a plain `lambda_runtime` handler chooses both through its own `Diagnostic`, which matters when Step Functions matches errors by name.
+- **WebSocket or VPC Lattice events.** `davidrs` reads API Gateway, Function URL and, with the `alb` feature, Application Load Balancer payloads of `lambda_http`.
+- **Concurrent invocations, tower layers or SnapStart hooks.** `lambda_runtime` runs several invocations at once on Lambda Managed Instances and accepts tower layers; the `davidrs` entry points run one invocation at a time and take no layers of yours.
+- **A JSON log format.** `lambda_runtime`'s default subscriber follows `AWS_LAMBDA_LOG_FORMAT`; [`telemetry::init`](crate::telemetry::init) follows `AWS_LAMBDA_LOG_LEVEL` but always writes plain text.
+
+What these crates offer elsewhere, `davidrs` covers in its own terms: form bodies with [`Request::form`](crate::http::Request::form), and the `errorType` Lambda records — the name a Step Functions `Retry` or `Catch` matches — through the official [`Diagnostic`](crate::runtime::Diagnostic) type that every non-HTTP handler's error converts into.
 
 **Where `davidrs` goes further.** The official crates hand a handler an epoch deadline that nothing enforces, decode JSON with no size limit of their own, turn a failed HTTP handler into an invocation error — a gateway `502` with no body — instead of a response, leave SQS partial batches and streamed producers to each function, and include no trace exporter. Those are the parts this crate owns.
 
@@ -133,7 +144,7 @@ A Kinesis or DynamoDB stream handler can return `KinesisEventResponse` or `Dynam
 
 ## Where to go next
 
-1. [Getting started](crate::guide::getting_started): a first function, the features to enable, running it locally.
-2. [Deployment](crate::guide::deployment): building with Cargo Lambda, sizes, and how a function connects to API Gateway, Function URLs and CloudFront.
-3. [Architecture](crate::guide::architecture): how an invocation flows through each pipeline.
-4. The chapter for each capability you use, listed in the [guide](crate::guide).
+1. [Getting started](crate::guide::getting_started): create the function, run it, and read the success and error bodies.
+2. The chapter for the trigger you are deploying, from the table on the [guide index](crate::guide).
+3. [Deployment](crate::guide::deployment): the binary, and the AWS setting that makes a correct partial-failure report do nothing if you forget it.
+4. [Architecture](crate::guide::architecture): the order of steps, once you need to know where a policy or a finalizer runs.

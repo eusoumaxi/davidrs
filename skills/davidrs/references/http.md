@@ -119,6 +119,7 @@ For query pairs, `sourceIp` or claims, parse a payload 2.0 event with `lambda_ht
 | `path::<T>()` | the path parameters the gateway matched | `400 ERROR_INVALID_PATH` |
 | `query::<T>()` | the raw query string | `400 ERROR_INVALID_QUERY` |
 | `query_pairs()` | the gateway's pairs, repeats kept (`?tag=a&tag=b`) | — |
+| `form::<T>()` | an `application/x-www-form-urlencoded` body | `413`, `415`, `400 ERROR_MALFORMED_BODY` |
 | `json::<T>()`, `json_bounded::<T>(bytes)`, `json_text()` | the body: typed, under a tighter limit, or as UTF-8 | `413 ERROR_BODY_TOO_LARGE`, `415 ERROR_UNSUPPORTED_MEDIA_TYPE`, `400 ERROR_MALFORMED_BODY` |
 | `raw_body()` | the exact bytes, for a signature; the limit was checked first | — |
 | `header(name)`, `method()`, `media_type()`, `native()` | one header, the method, `Content-Type` lowercased without parameters, the `lambda_http::Request` | — |

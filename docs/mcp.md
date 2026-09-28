@@ -1,8 +1,17 @@
 # MCP servers
 
-The Model Context Protocol (MCP) is how AI applications — chat assistants, coding agents, editors — find and call tools that live outside them. An MCP server publishes a list of tools, each with a name, a description a model reads and a JSON Schema for its arguments, and runs a tool when a client calls it. [`mcp::Server`](crate::mcp::Server) is such a server in one Lambda function. It speaks MCP revision 2026-07-28 ([`PROTOCOL_VERSION`](crate::mcp::PROTOCOL_VERSION)) over Streamable HTTP, answers each request with one JSON object and keeps no session, so it scales like any other function.
+Enable `mcp` for tools you write as async functions, and `mcp-openapi` when an OpenAPI document should become those tools. Add `auth` when the function verifies bearer tokens, `digest` when callers present API keys stored as SHA-256 hashes, and `logs` so a failed tool's code is logged. An AI client then calls your system with the signed-in user's own permissions.
 
-Build one when an AI client should act on your system with the signed-in user's own permissions: read their orders, draft an invoice, search a catalogue. If your API has an OpenAPI document, its operations become tools in a few lines; a tool that needs several requests, or data your API does not serve, is an async function.
+This chapter is long. The path through it is short:
+
+1. [One Lambda, running in minutes](#one-lambda-running-in-minutes) creates the function and connects a client.
+2. [With an API key](#with-an-api-key) is the credential for automation. [With Amazon Cognito](#with-amazon-cognito-or-any-openid-connect-issuer) (or any OpenID Connect issuer) is the credential when a person is signed in and the client can follow a `401`.
+3. [Deploying it](#deploying-it) is a Function URL with auth type `NONE` behind CloudFront, or an HTTP API with a JWT authorizer. Origin access control does not fit, because MCP clients do not send `x-amz-content-sha256`. [Security on AWS](crate::guide::aws_security) explains that constraint.
+4. The protocol sections after the quick start are for a client that fails in a way those three do not explain: a header that disagrees with the body, an error in the wrong channel, or a tool result that leaked.
+
+The Model Context Protocol (MCP) is how those clients find and call tools that live outside them. An MCP server publishes a list of tools, each with a name, a description a model reads and a JSON Schema for its arguments, and runs a tool when a client calls it. [`mcp::Server`](crate::mcp::Server) is such a server in one Lambda function. It speaks MCP revision 2026-07-28 ([`PROTOCOL_VERSION`](crate::mcp::PROTOCOL_VERSION)) over Streamable HTTP, answers each request with one JSON object and keeps no session, so it scales like any other function.
+
+If your API has an OpenAPI document, its operations become tools in a few lines. A tool that needs several requests, or data your API does not serve, is an async function.
 
 ## Why it exists
 

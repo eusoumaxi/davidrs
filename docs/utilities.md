@@ -1,6 +1,12 @@
 # Utilities
 
-Three small capabilities that most functions need sooner or later: an in-process cache, gzip with a cap on the decoded size, and SHA-256 digests. Each has its own feature, so a function links only the ones it uses.
+Three small capabilities, each behind its own feature, so a function links only the ones it uses.
+
+| Section | Feature | Use it for |
+| --- | --- | --- |
+| [In-process caches](#in-process-caches-cache) | `cache` | A value that may be stale for a bounded time and does not have to agree across execution environments |
+| [Bounded gzip](#bounded-gzip-compression) | `compression` | Compressing bytes, or opening gzip a caller sent, with a cap on the decoded size |
+| [Digests](#digests-digest) | `digest` | A SHA-256 cache key, idempotency key or object name, spelled the same way everywhere |
 
 ## In-process caches (`cache`)
 

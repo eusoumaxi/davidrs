@@ -5,7 +5,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use davidrs::telemetry::metrics::{MAX_DIMENSIONS, MAX_METRICS};
 use davidrs::telemetry::{Metrics, Unit};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// The document stamped at `at`, parsed back.
 fn render_at(metrics: &Metrics, at: SystemTime) -> Value {

@@ -1,6 +1,8 @@
 # Access control and rate limits
 
-Two stages of the HTTP pipeline decide whether a request may reach its handler: **admission** counts it before anything is parsed, and the **policy** decides who is calling and what they may do. Both are traits you can implement yourself ([`Admission`](crate::http::Admission), [`Policy`](crate::http::Policy)), and both come with a configurable implementation that covers most APIs without writing one: [`RateLimited`](crate::http::RateLimited) and [`Access`](crate::http::access::Access).
+Two stages of the HTTP pipeline decide whether a request reaches its handler. **Admission** counts it before anything is parsed. The **policy** decides who is calling and what they may do. Both are traits you can implement ([`Admission`](crate::http::Admission), [`Policy`](crate::http::Policy)). Most APIs do not need to: [`RateLimited`](crate::http::RateLimited) and [`Access`](crate::http::access::Access) cover them from configuration. Enable `http`. Add `auth` only when the function itself verifies the bearer token. Add `dynamo` when the counter is [`DynamoWindow`](crate::http::rate_limit::DynamoWindow).
+
+Put identity and permission in the policy, after the body has been decoded. The handler then receives a [`Grant`](crate::http::access::Grant) whose type already says whether a caller and a tenant are present, and it should not read the `Authorization` header again. Put a count that must refuse the request before parsing in admission. Floods and abusive addresses should not reach either stage: AWS WAF and API Gateway throttling refuse them before the function is invoked. `RateLimited` is for a quota those cannot express, such as 1,000 exports per verified user per day. [Security on AWS](crate::guide::aws_security) says which product does which of those jobs.
 
 ## Who is calling: `Access`
 

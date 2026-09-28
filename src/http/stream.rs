@@ -19,7 +19,8 @@
 //! Steps 5–7 share the invocation deadline minus a margin (one second by
 //! default) that keeps time to flush the last frames. Every response, success
 //! or failure, gets `Vary: Origin, Accept`, the configured finalizer and, for
-//! an allowed origin, the CORS headers.
+//! an allowed origin, the CORS headers. Its `Set-Cookie` headers then move to
+//! the stream's list of cookies, where Lambda expects them.
 //!
 //! Decoding and admission are the handler's: a streamed endpoint often
 //! decides what to count only after it knows the caller (an anonymous
@@ -68,8 +69,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
-use lambda_http::http::{header, HeaderMap, HeaderName, HeaderValue, Method, StatusCode};
 use lambda_http::RequestExt as _;
+use lambda_http::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, header};
 use lambda_runtime::streaming::Body;
 use lambda_runtime::{LambdaEvent, MetadataPrelude};
 use serde_json::Value;
@@ -255,6 +256,21 @@ pub fn from_response(response: HttpResponse) -> StreamResponse {
         },
         stream: body,
     }
+}
+
+/// Moves every `Set-Cookie` header into the prelude's `cookies`, the field a
+/// Lambda response stream carries cookies in, as `lambda_http` does for its
+/// own streamed responses. Left among the headers, several cookies could not
+/// all be sent.
+fn move_cookies(prelude: &mut MetadataPrelude) {
+    let cookies: Vec<String> = prelude
+        .headers
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .map(|value| String::from_utf8_lossy(value.as_bytes()).into_owned())
+        .collect();
+    prelude.headers.remove(header::SET_COOKIE);
+    prelude.cookies.extend(cookies);
 }
 
 fn head(status: StatusCode, content_type: &'static str, body: Body) -> StreamResponse {
@@ -588,11 +604,12 @@ where
         if let Some(finalize) = &self.finalize {
             finalize(&invocation, headers);
         }
-        if let (Some(cors), Some(origin)) = (&self.cors, origin.as_deref()) {
-            if cors.allows(origin) {
-                cors.apply(origin, &self.allowed_methods(), headers);
-            }
+        if let (Some(cors), Some(origin)) = (&self.cors, origin.as_deref())
+            && cors.allows(origin)
+        {
+            cors.apply(origin, &self.allowed_methods(), headers);
         }
+        move_cookies(&mut response.metadata_prelude);
         #[cfg(feature = "otel")]
         crate::telemetry::record_status(&span, response.metadata_prelude.status_code.as_u16());
         response
@@ -629,16 +646,16 @@ where
             prepare(&mut native);
         }
         let origin = Request::new(&native).header("origin").map(str::to_owned);
-        if let (Some(cors), Some(origin)) = (&self.cors, origin.as_deref()) {
-            if !cors.allows(origin) {
-                let failure = Failure::new(
-                    StatusCode::FORBIDDEN,
-                    codes::ORIGIN_NOT_ALLOWED,
-                    "Origin not allowed",
-                )
-                .with_kind(FailureKind::Policy);
-                return (Some(origin.to_owned()), Err(failure));
-            }
+        if let (Some(cors), Some(origin)) = (&self.cors, origin.as_deref())
+            && !cors.allows(origin)
+        {
+            let failure = Failure::new(
+                StatusCode::FORBIDDEN,
+                codes::ORIGIN_NOT_ALLOWED,
+                "Origin not allowed",
+            )
+            .with_kind(FailureKind::Policy);
+            return (Some(origin.to_owned()), Err(failure));
         }
         if native.method() == Method::OPTIONS {
             return (origin, Ok(json(StatusCode::NO_CONTENT, &Value::Null)));

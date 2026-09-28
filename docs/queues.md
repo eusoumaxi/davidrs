@@ -1,6 +1,8 @@
 # Queues
 
-[`queue::run`](crate::queue::run) runs an SQS consumer on the native Lambda loop. Your handler receives one [`Delivery`](crate::queue::Delivery) at a time and returns a [`Disposition`](crate::queue::Disposition); the adapter turns the results into the partial-batch response Lambda expects, a [`BatchResponse`](crate::queue::BatchResponse) listing only the messages SQS must deliver again. [`Visibility`](crate::queue::Visibility), with the `queue-visibility` feature, changes one message's visibility timeout so a retry can come sooner or later than the queue's default.
+[`queue::run`](crate::queue::run) runs an SQS consumer on the native Lambda loop. Enable `queue`. Add `queue-visibility` when a retry should become visible sooner or later than the queue's timeout, instead of sleeping inside the function. The partial-batch response does nothing unless the event source mapping includes `ReportBatchItemFailures`. Without it, Lambda deletes the whole batch after a successful invocation, including the messages the handler did not finish. [Deployment](crate::guide::deployment) shows that setting. Give the queue a dead-letter queue, a `maxReceiveCount`, and a visibility timeout of at least six times the function timeout, so a slow invocation is not handed to a second copy while the first is still running.
+
+The handler receives one [`Delivery`](crate::queue::Delivery) at a time and returns a [`Disposition`](crate::queue::Disposition). The adapter turns those results into the [`BatchResponse`](crate::queue::BatchResponse) Lambda expects, listing only the messages SQS must deliver again. [`Visibility`](crate::queue::Visibility), with the `queue-visibility` feature, changes one message's visibility timeout so a retry can come sooner or later than the queue's default.
 
 ## Why it exists
 
@@ -138,3 +140,14 @@ A receipt handle is only valid during the current visibility window, so a call m
 - **No dead-letter logic.** Giving up after a number of attempts is the queue's redrive policy; `receive_count` only lets you see how close a message is.
 - **No error text in the logs.** A failed message is logged by id only, because an error may carry data the application must not log. Log your own classification before returning `Err`.
 - **No sending or deleting.** Other SQS calls use `aws-sdk-sqs` directly.
+
+## If messages disappear or come back forever
+
+| What you see | What it usually means | What to change |
+| --- | --- | --- |
+| Every message in the batch is delivered again, including the ones the handler finished | The handler returned `Err` for the invocation, or it panicked | Return `Ok(Disposition::Retry)` or `Err` for that message only. A panic fails the whole invocation. |
+| A message you never reached is gone | The loop stopped early and only the failures it saw were reported | Use [`queue::run`](crate::queue::run) or [`process`](crate::queue::process). Unattempted messages are reported as failures. |
+| The partial response is correct in tests, and production deletes the whole batch | `ReportBatchItemFailures` is not on the event source mapping | Turn it on. Without it, a successful invocation deletes every message. |
+| Later messages of a FIFO group run before a failed one is retried | The queue ARN ends in `.fifo` and something else is processing the batch | This adapter stops at the first failure on a FIFO queue and reports every later message. Confirm you are on [`queue::run`](crate::queue::run). |
+| Changing visibility fails, or changes the wrong message | The call used the message id | Build [`Visibility`](crate::queue::Visibility) from the [`Delivery`](crate::queue::Delivery). It only accepts the receipt handle. The handle is valid for the current visibility window. |
+| The function times out and the whole batch returns | The handler was still running when Lambda stopped the process | Each message runs under the invocation deadline minus 100 ms, so the adapter can still post the response. Bound the handler's own awaits with that deadline. |

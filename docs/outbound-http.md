@@ -1,19 +1,16 @@
 # Outbound HTTP
 
-[`client::build`](crate::client::build) builds an ordinary [`reqwest::Client`] with a connect timeout, a whole-request timeout, no automatic redirects and the Mozilla roots compiled in. [`read_bounded`](crate::client::read_bounded) and [`json_bounded`](crate::client::json_bounded) read a response body up to a byte cap. [`send_error`](crate::client::send_error) turns a transport error into a [`RuntimeError`](crate::RuntimeError) without the request URL. There is no wrapper type: after `build` you write plain `reqwest`.
+Enable `client`. [`client::build`](crate::client::build) returns an ordinary `reqwest::Client`. There is no wrapper. Build it once in `main`, store it on `App`, and a warm invocation reuses the connection pool.
 
-## Why it exists
+Three defaults of `reqwest::Client::new()` are the wrong ones inside a Lambda:
 
-Each of these defaults prevents a failure that only shows up in production:
+- **A timeout.** Without one, a hung upstream holds the invocation until Lambda kills it. Nothing is logged and no cleanup runs. [`Limits`](crate::client::Limits) is 2 seconds to connect and 10 seconds for the whole request unless you pass other values.
+- **A byte cap.** `response.bytes()` and `response.json()` will buffer whatever the server sends, including a body that never ends. [`read_bounded`](crate::client::read_bounded) and [`json_bounded`](crate::client::json_bounded) refuse a declared `Content-Length` over the cap before reading, then check every chunk. Going over the cap is [`RuntimeError::LimitExceeded`](crate::RuntimeError::LimitExceeded), never a truncated value you might treat as complete.
+- **No redirects, and no URL in the error.** `reqwest` follows up to ten redirects by default. It drops `Authorization` when the host changes, and it does not drop a custom credential header such as `x-api-key`, so that header would go wherever the upstream points. A `reqwest` error also prints its URL, which is how a key in a query string reaches CloudWatch. [`send_error`](crate::client::send_error) keeps the cause and drops the URL. Here a `3xx` is returned to you as it is.
 
-- **No timeout.** `reqwest::Client::new()` waits forever. A hung upstream then holds the invocation until Lambda kills it, so no error is logged and no cleanup runs. [`Limits`](crate::client::Limits) makes both limits explicit: 2 s to connect and 10 s for the whole request by default.
-- **Unbounded bodies.** `response.bytes()` and `response.json()` buffer whatever the server sends. One oversized or endless response exhausts the function's memory and kills the execution environment. The bounded readers refuse a declared `Content-Length` over the cap before reading anything, then check every chunk before keeping it, so a missing or lying header does not help.
-- **Redirects.** `reqwest` follows up to ten by default. It drops `Authorization` when the host changes, but a custom credential header such as `x-api-key` goes wherever the upstream points, and each hop spends budget the caller did not plan for. Here a `3xx` is returned to the caller as it is.
-- **URLs in errors.** A `reqwest::Error` prints its URL, and some APIs take a key as a query parameter. One `error!("{error}")` then writes the key into the logs. `send_error` and the bounded readers strip the URL and keep the cause.
+The readers do not look at the HTTP status. A `404` body is still a body. Decide what the status means, then read. Build URLs from configuration, never from request input: this client has no host allowlist.
 
 ## How to use it
-
-Build the client once, in `main`, and keep it in the application state. It holds a connection pool, so a warm invocation reuses the connection the previous one opened.
 
 ```rust
 use std::time::Duration;

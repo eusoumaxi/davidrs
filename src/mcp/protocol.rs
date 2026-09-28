@@ -6,9 +6,9 @@
 //! into headers that must agree with the body.
 
 use base64::Engine as _;
-use lambda_http::http::{header, HeaderMap, HeaderValue, StatusCode};
 use lambda_http::Body;
-use serde_json::{json, Map, Value};
+use lambda_http::http::{HeaderMap, HeaderValue, StatusCode, header};
+use serde_json::{Map, Value, json};
 
 use crate::http::HttpResponse;
 
@@ -207,7 +207,9 @@ pub(super) fn validate(headers: &HeaderMap, message: &Message) -> Result<(), Rep
         if header_text(headers, name).and_then(decode).as_deref() != Some(expected) {
             return reject(
                 HEADER_MISMATCH,
-                format!("Header mismatch: {name} is missing or differs from the body value '{expected}'"),
+                format!(
+                    "Header mismatch: {name} is missing or differs from the body value '{expected}'"
+                ),
                 None,
             );
         }

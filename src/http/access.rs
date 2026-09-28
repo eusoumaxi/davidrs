@@ -94,15 +94,15 @@ use std::fmt;
 use std::marker::PhantomData;
 use std::sync::Arc;
 
-use lambda_http::request::RequestContext;
 use lambda_http::RequestExt as _;
+use lambda_http::request::RequestContext;
 use serde_json::{Map, Value};
 
+use super::StatusCode;
 use super::codes;
 use super::failure::{ErrorDefinition, Failure, FailureKind};
 use super::policy::Policy;
 use super::request::Request;
-use super::StatusCode;
 use crate::Invocation;
 
 /// Verified claims about a caller, whichever check verified them.
@@ -730,17 +730,17 @@ impl<C, Who, Where> Access<C, Who, Where> {
             }
         }
         #[cfg(feature = "auth")]
-        if let Some(verifier) = &self.verifier {
-            if let Some(token) = request.header("authorization").and_then(bearer_token) {
-                let verified = verifier
-                    .verify(token)
-                    .await
-                    .map_err(|_| refusal(self.refusals.invalid_token))?;
-                let claims = Claims::new(verified.all().clone());
-                return (self.identify)(&claims)
-                    .map(Some)
-                    .ok_or_else(|| refusal(self.refusals.invalid_token));
-            }
+        if let Some(verifier) = &self.verifier
+            && let Some(token) = request.header("authorization").and_then(bearer_token)
+        {
+            let verified = verifier
+                .verify(token)
+                .await
+                .map_err(|_| refusal(self.refusals.invalid_token))?;
+            let claims = Claims::new(verified.all().clone());
+            return (self.identify)(&claims)
+                .map(Some)
+                .ok_or_else(|| refusal(self.refusals.invalid_token));
         }
         Ok(None)
     }
@@ -770,10 +770,10 @@ where
         if Where::REQUIRED && tenant.is_none() {
             return Err(refusal(self.refusals.tenant_required));
         }
-        if let Some(permit) = &self.permit {
-            if !permit(caller.as_ref(), tenant.as_deref()) {
-                return Err(refusal(self.refusals.forbidden));
-            }
+        if let Some(permit) = &self.permit
+            && !permit(caller.as_ref(), tenant.as_deref())
+        {
+            return Err(refusal(self.refusals.forbidden));
         }
         let caller = Who::fulfill(caller).ok_or_else(|| refusal(self.refusals.unauthenticated))?;
         let tenant =

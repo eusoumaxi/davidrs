@@ -7,11 +7,11 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use davidrs::http::stream::{StreamApi, StreamRequest, StreamResponse};
-use davidrs::http::{codes, Failure, PlainErrors, Public, StatusCode};
 use davidrs::Context;
+use davidrs::http::stream::{StreamApi, StreamRequest, StreamResponse};
+use davidrs::http::{Failure, PlainErrors, Public, StatusCode, codes};
 use lambda_runtime::LambdaEvent;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Captures what a `fmt` subscriber writes.
 #[derive(Clone, Default)]

@@ -5,11 +5,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use davidrs::http::{
-    codes, Admission as _, Api, Counter, ErrorDefinition, Failure, FailureKind, Json, PlainErrors,
-    Public, RateLimit, RateLimitConfig, RateLimited, Request, StatusCode,
+    Admission as _, Api, Counter, ErrorDefinition, Failure, FailureKind, Json, PlainErrors, Public,
+    RateLimit, RateLimitConfig, RateLimited, Request, StatusCode, codes,
 };
 use davidrs::{Context, Deadline, Invocation, RuntimeError};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 const CONFIG: RateLimitConfig = RateLimitConfig::new("search", 60, Duration::from_secs(300));
 

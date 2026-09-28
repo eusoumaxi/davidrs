@@ -8,8 +8,8 @@ use base64::Engine as _;
 use davidrs::auth::{Verifier, VerifierConfig};
 use davidrs::client::{self, Limits};
 use ring::rand::SystemRandom;
-use ring::signature::{RsaKeyPair, RsaPublicKeyComponents, RSA_PKCS1_SHA256};
-use serde_json::{json, Value};
+use ring::signature::{RSA_PKCS1_SHA256, RsaKeyPair, RsaPublicKeyComponents};
+use serde_json::{Value, json};
 
 use super::server::{self, Server};
 

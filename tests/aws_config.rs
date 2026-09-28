@@ -4,11 +4,13 @@
 //! lock and run one at a time.
 #![cfg(feature = "aws")]
 
+mod support;
+
 use std::sync::{Mutex, MutexGuard};
 
 use aws_credential_types::provider::ProvideCredentials as _;
-use davidrs::aws::{sdk_config, Trust};
 use davidrs::RuntimeError;
+use davidrs::aws::{Trust, sdk_config};
 
 static ENVIRONMENT: Mutex<()> = Mutex::new(());
 
@@ -18,12 +20,12 @@ fn lambda_environment(session_token: Option<&str>) -> MutexGuard<'static, ()> {
     let guard = ENVIRONMENT
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    std::env::set_var("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE");
-    std::env::set_var("AWS_SECRET_ACCESS_KEY", "secret-example");
-    std::env::set_var("AWS_REGION", "eu-west-1");
+    support::env::set("AWS_ACCESS_KEY_ID", "AKIDEXAMPLE");
+    support::env::set("AWS_SECRET_ACCESS_KEY", "secret-example");
+    support::env::set("AWS_REGION", "eu-west-1");
     match session_token {
-        Some(token) => std::env::set_var("AWS_SESSION_TOKEN", token),
-        None => std::env::remove_var("AWS_SESSION_TOKEN"),
+        Some(token) => support::env::set("AWS_SESSION_TOKEN", token),
+        None => support::env::remove("AWS_SESSION_TOKEN"),
     }
     guard
 }
@@ -79,9 +81,9 @@ fn a_missing_variable_is_a_configuration_error_naming_it() {
     let _environment = lambda_environment(None);
     for name in ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"] {
         let value = std::env::var(name).expect("set");
-        std::env::remove_var(name);
+        support::env::remove(name);
         let failure = sdk_config(Trust::NativeRoots).expect_err("missing");
-        std::env::set_var(name, value);
+        support::env::set(name, value);
         assert!(matches!(failure, RuntimeError::Configuration(_)));
         assert_eq!(
             failure.to_string(),

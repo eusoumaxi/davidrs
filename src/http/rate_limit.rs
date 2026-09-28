@@ -42,11 +42,11 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
+use super::StatusCode;
 use super::codes;
 use super::failure::{ErrorDefinition, Failure, FailureKind};
 use super::policy::Admission;
 use super::request::Request;
-use super::StatusCode;
 use crate::{Invocation, RuntimeError};
 
 /// The name both header fields give the one policy a route applies.
@@ -298,8 +298,8 @@ pub use dynamo::DynamoWindow;
 mod dynamo {
     use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-    use aws_sdk_dynamodb::types::{AttributeValue, ReturnValue};
     use aws_sdk_dynamodb::Client;
+    use aws_sdk_dynamodb::types::{AttributeValue, ReturnValue};
     use tracing::Instrument as _;
 
     use super::{Counter, RateLimit, RateLimitConfig};

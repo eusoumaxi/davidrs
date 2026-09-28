@@ -12,13 +12,13 @@ use std::sync::Arc;
 use std::time::{Duration, UNIX_EPOCH};
 
 use base64::Engine as _;
-use davidrs::auth::{
-    bearer, Verifier, VerifierConfig, VerifyError, MAX_JWKS_BYTES, MAX_KEYS, MAX_TOKEN_BYTES,
-};
 use davidrs::RuntimeError;
-use serde_json::{json, Value};
+use davidrs::auth::{
+    MAX_JWKS_BYTES, MAX_KEYS, MAX_TOKEN_BYTES, Verifier, VerifierConfig, VerifyError, bearer,
+};
+use serde_json::{Value, json};
 use support::server::Server;
-use support::tokens::{http, jwk, now, rs256, signed, token, Jwks, B64, ISSUER};
+use support::tokens::{B64, ISSUER, Jwks, http, jwk, now, rs256, signed, token};
 
 /// Claims every check of [`Jwks::config`] accepts.
 fn claims() -> Value {

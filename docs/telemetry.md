@@ -1,6 +1,8 @@
 # Telemetry
 
-Logs, metrics and traces are three separate features, because a Lambda binary pays at cold start for everything it links. A function that emits metrics does not link an exporter, and a function that only logs does not link OpenTelemetry.
+Logs, metrics and traces are three separate features, because a Lambda binary pays at cold start for everything it links. Enable only the ones the function uses. A function that emits metrics does not link an exporter. A function that only logs does not link OpenTelemetry.
+
+Call [`telemetry::init`](crate::telemetry::init) once, first in `main`, and hold the [`Guard`](crate::telemetry::Guard) until `main` returns. The crate does not install a global subscriber for you. A second attempt is an error, not a silently dropped log. Two details that are easy to miss once that call succeeds: print an Embedded Metric Format line with `println!`, because a tracing prefix means CloudWatch will not turn it into a metric, and set the function's tracing mode to `Active`. In `PassThrough`, a function behind an HTTP API, a Function URL or SQS is never sampled.
 
 | Feature | Gives | Links |
 | --- | --- | --- |
@@ -35,9 +37,9 @@ The `service` argument names the traces only when neither `OTEL_SERVICE_NAME` no
 
 ## Logs
 
-**What it is.** [`logs::init`](crate::telemetry::logs::init) installs a plain-text subscriber at the level [`level_from_env`](crate::telemetry::logs::level_from_env) reads from `RUST_LOG`. Its format, [`text_layer`](crate::telemetry::logs::text_layer), has no ANSI colours and no timestamp, because CloudWatch shows escape codes verbatim and Lambda already stamps every line.
+**What it is.** [`logs::init`](crate::telemetry::logs::init) installs a plain-text subscriber at the level [`level_from_env`](crate::telemetry::logs::level_from_env) reads from `RUST_LOG`, or, when it is unset, from `AWS_LAMBDA_LOG_LEVEL`, the application log level Lambda's advanced logging controls set. Its format, [`text_layer`](crate::telemetry::logs::text_layer), has no ANSI colours and no timestamp, because CloudWatch shows escape codes verbatim and Lambda already stamps every line.
 
-**Why it exists.** `tracing-subscriber`'s `env-filter` understands directives such as `info,my_crate=debug`, and pulls in `regex` for it, a large dependency for a Lambda binary. A bare level (`debug`, `WARN`, `off`, or `0` to `5`) covers what a function sets in its configuration, and anything else falls back to `INFO` instead of failing to start. An empty `RUST_LOG` reads as `ERROR`, as `tracing` parses it.
+**Why it exists.** `tracing-subscriber`'s `env-filter` understands directives such as `info,my_crate=debug`, and pulls in `regex` for it, a large dependency for a Lambda binary. A bare level (`debug`, `WARN`, `off`, or `0` to `5`) covers what a function sets in its configuration, and anything else falls back to `INFO` instead of failing to start. An empty `RUST_LOG` reads as `ERROR`, as `tracing` parses it. Both `init` functions also drop the `Lambda runtime invoke` span that `lambda_runtime` opens around each invocation, with [`runtime_span_filter`](crate::telemetry::logs::runtime_span_filter): the pipeline's own invocation span carries the same request id, and the runtime's would otherwise double every line's prefix and, with `otel`, reach X-Ray as a trace of its own.
 
 **How to use it.** [`telemetry::init`](crate::telemetry::init) already does this. To assemble a subscriber of your own, reuse the pieces:
 
@@ -191,3 +193,13 @@ assert!(datagram[..read].starts_with(b"{\"format\":\"json\",\"version\":1}\nT1S"
 - Running locally against an X-Ray daemon by setting `AWS_XRAY_DAEMON_ADDRESS`.
 
 **What it does not do.** Every span is exported: the `Sampled` flag of the incoming trace header is not consulted. A span larger than one datagram (64 KB) is lost. There is no HTTPS exporter, no export of logs or metrics, and no propagation to outbound calls: set `X-Amzn-Trace-Id` on requests you send yourself. A span whose level is filtered out is not traced at all.
+
+## If you cannot see the signal
+
+| What you see | What it usually means | What to change |
+| --- | --- | --- |
+| No log lines, or only errors | `RUST_LOG` is empty, which reads as `ERROR` | Set `RUST_LOG` to `info` or `debug`. A directive such as `info,my_crate=debug` is not parsed. An unreadable value falls back to `INFO`. |
+| A metric you recorded never appears in CloudWatch | The EMF JSON was written through `tracing`, so the line has a prefix | `println!` the string from [`Metrics::to_json`](crate::telemetry::Metrics::to_json). The whole line has to be the document. |
+| A metric past the 100th in one document is missing, and the others arrived | [`Metrics`](crate::telemetry::Metrics) drops metrics past [`MAX_METRICS`](crate::telemetry::metrics::MAX_METRICS) and dimensions past [`MAX_DIMENSIONS`](crate::telemetry::metrics::MAX_DIMENSIONS) | Split the document. A rejected document would have dropped every metric in it. |
+| No traces, and the function is behind an HTTP API, a Function URL or SQS | Tracing mode is `PassThrough` | Set the function to `Active`, and enable the `otel` feature. [`telemetry::init`](crate::telemetry::init) is what installs the exporter. |
+| Spans exist locally and stop at the function in AWS | Outbound calls do not receive the trace header | Set `X-Amzn-Trace-Id` on the requests you send. The exporter does not do that for you. |

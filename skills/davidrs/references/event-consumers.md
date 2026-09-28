@@ -12,7 +12,7 @@ Non-HTTP triggers with davidrs: SQS queues, EventBridge rules, schedules, direct
 | a direct `Invoke`, a workflow task, S3, DynamoDB Streams, Kinesis, SNS | `runtime` | `davidrs::runtime::run(app, handler)` | any `In` → any `Out` |
 | a Function URL in `RESPONSE_STREAM` mode, read without the HTTP pipeline | `streaming` | `davidrs::streaming::run(app, handler)` | any `In` → `(MetadataPrelude, StreamBody)` |
 
-Every handler is `async fn(Arc<App>, Input, Context<()>) -> Result<Output, E>` with `E: Display` (the streaming handler returns its pair directly). The contract is the same for all of them:
+Every handler is `async fn(Arc<App>, Input, Context<()>) -> Result<Output, E>` (the streaming handler returns its pair directly). For `event`, `schedule` and `runtime`, `E: Into<davidrs::runtime::Diagnostic>`: `RuntimeError` (its variant becomes the `errorType`), `String`, `&'static str`, `std::io::Error`, or your own error with `impl From<YourError> for Diagnostic` to choose the `errorType` a Step Functions `Retry`/`Catch` matches. For `queue`, `E: Display`. The contract is the same for all of them:
 
 1. The runtime deserializes the payload into `Input`. A payload that does not match is an invocation error, and the handler never runs.
 2. The handler runs under the invocation deadline minus 100 ms, kept to post the answer.

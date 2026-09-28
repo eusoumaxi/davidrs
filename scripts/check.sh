@@ -2,8 +2,8 @@
 # Every check CI runs, runnable locally.
 #
 #   scripts/check.sh                     everything, in order
-#   scripts/check.sh <step>              one step: rules lint test features docs site
-#                                        package spelling workflows deny coverage
+#   scripts/check.sh <step>              one step: rules lint test features msrv docs
+#                                        site package spelling workflows deny coverage
 #   scripts/check.sh feature <name>      one feature alone
 #   scripts/check.sh branch [name]       a branch name (default: the current branch)
 #   scripts/check.sh commit-msg <file>   a commit message, as the commit-msg hook does
@@ -75,6 +75,16 @@ each_feature() {
   for name in $(features); do feature "$name"; done
 }
 
+# The oldest Rust the crate supports, `rust-version` in Cargo.toml: every
+# feature and target compiles with it. Installs that toolchain when missing.
+msrv() {
+  local version
+  version=$(cargo metadata --no-deps --format-version 1 --locked | jq -r '.packages[0].rust_version')
+  say "Rust $version, the minimum supported version"
+  rustup toolchain install "$version" --profile minimal --no-self-update >/dev/null
+  cargo "+$version" check --locked --all-features --all-targets
+}
+
 docs() {
   say "docs"
   RUSTDOCFLAGS='-D warnings' cargo doc --locked --no-deps --all-features
@@ -111,9 +121,16 @@ deny() {
   cargo deny --all-features --locked check
 }
 
+# Line coverage against the floor. When COVERAGE_LCOV is set, also write an
+# LCOV report at that path so CI can upload it.
 coverage() {
   say "coverage (floor ${COVERAGE_FLOOR}% of lines)"
-  cargo llvm-cov --locked --all-features --summary-only --fail-under-lines "$COVERAGE_FLOOR"
+  if [ -n "${COVERAGE_LCOV:-}" ]; then
+    cargo llvm-cov --locked --all-features --lcov --output-path "$COVERAGE_LCOV" \
+      --fail-under-lines "$COVERAGE_FLOOR"
+  else
+    cargo llvm-cov --locked --all-features --summary-only --fail-under-lines "$COVERAGE_FLOOR"
+  fi
 }
 
 # <type>/<description>: lowercase words joined by `-` (dots allowed, for a
@@ -211,6 +228,7 @@ all() {
   lint
   test_all
   each_feature
+  msrv
   docs
   package
   if command -v typos >/dev/null; then spelling; else echo "typos not installed: skipped" >&2; fi
@@ -227,7 +245,7 @@ if [ "$#" -eq 0 ]; then
   exit 0
 fi
 case "$1" in
-  rules | lint | docs | site | package | spelling | workflows | deny | coverage) "$1" ;;
+  rules | lint | msrv | docs | site | package | spelling | workflows | deny | coverage) "$1" ;;
   test) test_all ;;
   features) each_feature ;;
   feature) feature "${2:?a feature name}" ;;

@@ -39,7 +39,7 @@ davidrs = { version = "0.1", default-features = false, features = ["test-support
 
 - The second `davidrs` entry adds `test-support` to test builds only; the production binary never contains it.
 - `davidrs` does not re-export `tracing`, `serde_json`, `lambda_runtime` or the SDK crates. Add `tracing = "0.1"` to log from your own code, `serde_json = "1"` for `serde_json::Value`, `lambda_runtime = "1"` to name `MetadataPrelude` for `streaming::run`, and each SDK crate as `aws-sdk-<service> = { version = "1", default-features = false }`: `davidrs::aws::sdk_config` supplies its HTTP client and timer.
-- Use Rust 1.98.1 or later.
+- Use Rust 1.94.1 or later.
 
 ## main.rs
 
@@ -145,7 +145,7 @@ Every pipeline calls one shape: `async fn(Arc<App>, Input, Context<Scope>) -> Re
 | --- | --- | --- |
 | `Api`, `StreamApi`, MCP tools | `http::Failure` | rendered by the `ErrorRenderer`; every 5xx renders `InternalServerError` |
 | `queue::run` | any `E: Display`, usually `RuntimeError` | the message is delivered again; only its id is logged |
-| `event::run`, `schedule::run`, `runtime::run` | any `E: Display`, usually `RuntimeError` | an invocation error whose message is the `Display` text |
+| `event::run`, `schedule::run`, `runtime::run` | any `E: Into<runtime::Diagnostic>`, usually `RuntimeError` | an invocation error whose `errorType` the conversion chooses (a `RuntimeError` gives its variant) |
 
 - 4xx: `Failure::new(status, "ERROR_…", "message the client may read")`, with a stable code.
 - 5xx: `Failure::internal(code, detail)` or `Failure::from_error(code, &error)`, which keeps the whole source chain. The detail is never rendered, whatever the constructor; read it on purpose with `failure.internal_detail()`. `?` on a `RuntimeError` gives the same kind of `500`.

@@ -1,6 +1,6 @@
 # Features
 
-Every capability is a Cargo feature, and default features are empty. A feature enables only what it names, plus the internal pieces it needs, so a function's `Cargo.toml` reads as its build: nothing it did not ask for is compiled in.
+Every capability is a Cargo feature, and default features are empty. A feature enables only what it names, plus the internal pieces it needs, so a function's `Cargo.toml` reads as its build: nothing it did not ask for is compiled in. [Getting started](crate::guide::getting_started) turns on `http` and `logs` for one function. The table below is the full list, including what each name links.
 
 With no features at all, the crate is its value types — [`RuntimeError`](crate::RuntimeError), [`Invocation`](crate::Invocation), [`Deadline`](crate::Deadline), [`Context`](crate::Context) — and the environment readers. No runtime, no HTTP, no AWS SDK.
 
@@ -12,6 +12,7 @@ With no features at all, the crate is its value types — [`RuntimeError`](crate
 | `http` | `http::Api`, `Request`, `Failure`, renderers, `access`, `RateLimited`, `fields`, `schema` | `runtime` + `lambda_http` (HTTP APIs, Function URLs), `serde_urlencoded`, `bytes`, `base64` |
 | `http-stream` | `http::stream::StreamApi`, `Cors`, `negotiate`, server-sent events | `http` + `streaming` + `http-body`, `http-body-util` |
 | `apigw-rest` | REST API events in both HTTP pipelines | `http` + `lambda_http/apigw_rest` |
+| `alb` | Application Load Balancer events in the buffered pipeline, and the caller's address from `X-Forwarded-For` | `http` + `lambda_http/alb` |
 | `streaming` | `streaming::StreamBody`, `Producer`, `streaming::run` | `runtime` + `futures-util`, `tokio-util` |
 | `queue` | `queue::run`, `process`, `Delivery`, `Disposition` | `runtime` |
 | `queue-visibility` | `queue::Visibility`, `MAX_VISIBILITY_TIMEOUT` | `queue` + `aws` + `aws-sdk-sqs` |

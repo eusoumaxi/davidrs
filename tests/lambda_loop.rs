@@ -13,14 +13,14 @@
 mod support;
 
 use std::future::Future;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use davidrs::{error_chain, Context, RuntimeError};
-use serde_json::{json, Value};
-use support::server::{reply, Recorded, Reply, Server};
-use tokio::sync::{mpsc, Mutex, MutexGuard};
+use davidrs::{Context, RuntimeError, error_chain};
+use serde_json::{Value, json};
+use support::server::{Recorded, Reply, Server, reply};
+use tokio::sync::{Mutex, MutexGuard, mpsc};
 
 const REQUEST_ID: &str = "8476a536-e9f4-11e8-9739-2dfe598c3fcd";
 const FUNCTION_ARN: &str = "arn:aws:lambda:us-east-1:123456789012:function:example";
@@ -86,7 +86,7 @@ impl RuntimeApi {
             ),
         ];
         for (name, value) in variables {
-            std::env::set_var(name, value);
+            support::env::set(name, value);
         }
         Self {
             _server: server,
@@ -469,8 +469,8 @@ mod queue {
 #[cfg(feature = "streaming")]
 mod streaming {
     use davidrs::streaming::StreamBody;
-    use hyper::header::HeaderValue;
     use hyper::StatusCode;
+    use hyper::header::HeaderValue;
     use lambda_runtime::MetadataPrelude;
 
     use super::*;

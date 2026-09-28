@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use davidrs::http::{
-    literal, Api, ErrorRenderer, Failure, HttpResponse, Json, Method, Policy, Request, StatusCode,
+    Api, ErrorRenderer, Failure, HttpResponse, Json, Method, Policy, Request, StatusCode, literal,
 };
 use davidrs::{Context, Invocation, RuntimeError};
 

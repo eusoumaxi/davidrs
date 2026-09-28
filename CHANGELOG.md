@@ -9,6 +9,12 @@ version may change the public API, and its entry says how.
 
 The first public release.
 
+### Changed
+
+- The guide, README and examples index now say when to read each chapter,
+  what a caller or Lambda should observe when a call works, and what to
+  change when it does not.
+
 ### Added
 
 - Pipelines, one per trigger: buffered HTTP (`http::Api`), streamed HTTP with
@@ -47,5 +53,16 @@ The first public release.
 - Telemetry: logs, CloudWatch EMF metrics and X-Ray traces through the
   sandbox's agent.
 - Test support: synthetic invocations and requests for testing handlers.
+- `Request::form` for `application/x-www-form-urlencoded` bodies, and the
+  `alb` feature for Application Load Balancer events.
+- Handler errors of the non-HTTP triggers convert into `lambda_runtime`'s
+  `Diagnostic` (re-exported as `runtime::Diagnostic`), so a function chooses
+  the `errorType` a Step Functions `Retry` or `Catch` matches; a
+  `RuntimeError` reports its variant.
+- Logs follow `AWS_LAMBDA_LOG_LEVEL` when `RUST_LOG` is unset, and
+  `telemetry::logs::runtime_span_filter` drops the runtime's own invocation
+  span.
+- Streamed responses carry `Set-Cookie` headers in the stream's cookie list.
+- Rust 2024 edition; the minimum supported Rust is 1.94.1, checked in CI.
 
 [Unreleased]: https://github.com/eusoumaxi/davidrs/commits/main

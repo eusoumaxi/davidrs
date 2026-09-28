@@ -8,11 +8,11 @@ use std::sync::Arc;
 
 use davidrs::http::access::{Access, Claims, Grant, Refusals, Requirement, Tenancy};
 use davidrs::http::{
-    codes, Api, ErrorDefinition, Failure, FailureKind, Json, PlainErrors, Policy, Request,
-    StatusCode,
+    Api, ErrorDefinition, Failure, FailureKind, Json, PlainErrors, Policy, Request, StatusCode,
+    codes,
 };
 use davidrs::{Context, Deadline, Invocation};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// The application's caller in these tests.
 #[derive(Debug, Clone, PartialEq)]
@@ -152,11 +152,13 @@ async fn a_required_caller_reaches_the_grant_unwrapped() {
 #[tokio::test]
 async fn claims_that_describe_no_caller_leave_the_request_anonymous() {
     let request = signed_in(json!({ "email": "no-subject@example.com" }), json!({}));
-    assert!(authorize(&Access::new(user), &request)
-        .await
-        .expect("grant")
-        .caller()
-        .is_none());
+    assert!(
+        authorize(&Access::new(user), &request)
+            .await
+            .expect("grant")
+            .caller()
+            .is_none()
+    );
     let failure = refused(authorize(&Access::new(user).require_caller(), &request).await);
     assert_eq!(failure.code(), codes::UNAUTHENTICATED);
 }
@@ -324,12 +326,14 @@ async fn a_permission_rule_sees_the_caller_and_tenant_and_refuses_with_403() {
     let policy = Access::new(user)
         .tenancy(Tenancy::header("x-tenant-id", member).public())
         .permit(|user, tenant| user.is_some_and(|user| user.admin) && tenant == Some("tenant-a"));
-    assert!(authorize(
-        &policy,
-        &signed_in(alice(), json!({ "x-tenant-id": "tenant-a" }))
-    )
-    .await
-    .is_ok());
+    assert!(
+        authorize(
+            &policy,
+            &signed_in(alice(), json!({ "x-tenant-id": "tenant-a" }))
+        )
+        .await
+        .is_ok()
+    );
     let wrong_tenant = refused(
         authorize(
             &policy,
@@ -721,11 +725,13 @@ async fn a_rest_api_lambda_authorizer_context_is_read_as_claims() {
 #[cfg(feature = "apigw-rest")]
 #[tokio::test]
 async fn a_rest_api_request_without_an_authorizer_is_anonymous() {
-    assert!(authorize(&Access::new(user), &rest_api(Value::Null))
-        .await
-        .expect("grant")
-        .caller()
-        .is_none());
+    assert!(
+        authorize(&Access::new(user), &rest_api(Value::Null))
+            .await
+            .expect("grant")
+            .caller()
+            .is_none()
+    );
 }
 
 /// Bearer tokens verified by the function itself, against a local JWKS.
@@ -737,7 +743,7 @@ mod bearer {
     use davidrs::http::codes;
     use serde_json::json;
 
-    use super::support::tokens::{rs256, token, Jwks, ISSUER};
+    use super::support::tokens::{ISSUER, Jwks, rs256, token};
     use super::{authorize, http_api, refused, signed_in, user};
 
     /// The audience every test token is issued for.

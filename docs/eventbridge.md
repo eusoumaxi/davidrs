@@ -1,6 +1,8 @@
 # EventBridge publishing
 
-The [`eventbridge`](crate::eventbridge) module publishes events with `PutEvents` and reports what happened to each one. [`publish`](crate::eventbridge::publish) sends one event, [`publish_batch`](crate::eventbridge::publish_batch) up to [`MAX_ENTRIES`](crate::eventbridge::MAX_ENTRIES) (10) in one call, and both return a [`PublishOutcome`](crate::eventbridge::PublishOutcome) with one [`EntryOutcome`](crate::eventbridge::EntryOutcome) per input, in input order. Where an event goes is an [`EventRoute`](crate::eventbridge::EventRoute): a source and a detail type, written as a `const`.
+Enable `eventbridge`. Consuming an event that a rule delivered is the `event` feature, in [Triggers](crate::guide::triggers), not this module.
+
+The [`eventbridge`](crate::eventbridge) module publishes with `PutEvents` and reports what happened to each entry. [`publish`](crate::eventbridge::publish) sends one event. [`publish_batch`](crate::eventbridge::publish_batch) sends up to [`MAX_ENTRIES`](crate::eventbridge::MAX_ENTRIES) (10). Both return a [`PublishOutcome`](crate::eventbridge::PublishOutcome) with one [`EntryOutcome`](crate::eventbridge::EntryOutcome) per input, in input order. A successful `Result` does not mean every entry was accepted: `PutEvents` answers `200` while rejecting individual entries. Where an event goes is an [`EventRoute`](crate::eventbridge::EventRoute), a source and a detail type, written as a `const`.
 
 ## Why it exists
 

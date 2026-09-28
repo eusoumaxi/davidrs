@@ -1,6 +1,8 @@
 # DynamoDB
 
-The [`dynamo`](crate::dynamo) module is a handful of functions around the DynamoDB SDK for the parts every data layer gets wrong: batches that succeed while doing only part of the work, paginated reads with no upper bound, page tokens, tracing spans and conditional-write failures. Everything else, keys, projections, conditions and item shapes, stays in your code, written with the SDK's builders.
+Enable `dynamo`. Build the client once in `main` with [`aws::sdk_config`](crate::aws::sdk_config), as [AWS configuration](crate::guide::aws_config) shows, and keep it on `App`.
+
+The [`dynamo`](crate::dynamo) module is a handful of functions around the DynamoDB SDK for the parts every data layer gets wrong: batches that succeed while doing only part of the work, paginated reads with no upper bound, page tokens, tracing spans and conditional-write failures. Keys, projections, conditions and item shapes stay in your code, written with the SDK's builders. There is no repository trait and no item mapper, because either one would hide which items were actually read or accepted. Check [`Page::is_complete`](crate::dynamo::Page::is_complete) and the batch outcome, not only the SDK `Result`. Keep the tenant in the query's key condition. A page token, even a signed one, is not a permission.
 
 ## Why it exists
 
@@ -134,3 +136,12 @@ async fn save(client: &aws_sdk_dynamodb::Client, ids: &[String], deadline: Deadl
 - **No transactions and no single-item helpers.** `GetItem`, `PutItem`, `UpdateItem` and `TransactWriteItems` are one SDK call each.
 - **No deadline inside a request.** The deadline is checked before every request; one request in flight is bounded by the SDK's own timeouts.
 - **No resuming a failed read.** When a page request fails, the pages already read are discarded and the error is returned. Keep `max_items` small if partial progress matters.
+
+## If the read looks complete and is not
+
+| What you see | What it usually means | What to change |
+| --- | --- | --- |
+| `BatchWriteItem` returned `Ok` and items are missing | The service answered `200` and listed unprocessed items | Use [`batch_write`](crate::dynamo::batch_write) and read the outcome. Do not check only the SDK `Result`. |
+| A listing is short and the client cannot ask for the rest | The read stopped at a limit and the response omitted `next`, or treated the page as complete | Return the token from [`Page::next`](crate::dynamo::Page::next) whenever [`is_complete`](crate::dynamo::Page::is_complete) is `false`. [`Stop::Pages`](crate::dynamo::Stop::Pages) means a filter or the 1 MB page size, not "there is nothing left". |
+| An edited page token reads another tenant's items | The tenant lived only in the token | Put the tenant in the key condition. A signed token is tamper-proof, not a permission. [`decode_cursor_signed`](crate::dynamo::decode_cursor_signed) treats a forged token as "start at the first page". |
+| The query runs until Lambda kills the function | The loop follows `LastEvaluatedKey` with no cap | Use [`query_bounded`](crate::dynamo::query_bounded) or [`scan_bounded`](crate::dynamo::scan_bounded) with [`PageLimits`](crate::dynamo::PageLimits) and the invocation deadline. |

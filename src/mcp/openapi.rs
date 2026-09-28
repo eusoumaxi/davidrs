@@ -64,13 +64,13 @@
 use std::fmt;
 use std::sync::Arc;
 
-use lambda_http::http::{header, HeaderName, HeaderValue, Method, StatusCode};
-use serde_json::{json, Map, Value};
+use lambda_http::http::{HeaderName, HeaderValue, Method, StatusCode, header};
+use serde_json::{Map, Value, json};
 
-use super::tool::{Run, Tool, INVALID_ARGUMENTS};
 use super::Server;
-use crate::http::{codes, Admission, Failure, Policy};
+use super::tool::{INVALID_ARGUMENTS, Run, Tool};
 use crate::RuntimeError;
+use crate::http::{Admission, Failure, Policy, codes};
 
 /// The largest API answer a tool result carries, by default (1 MiB).
 pub const DEFAULT_RESPONSE_LIMIT: usize = 1024 * 1024;

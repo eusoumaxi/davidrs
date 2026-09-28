@@ -7,14 +7,14 @@ mod support;
 use std::sync::Arc;
 use std::time::Duration;
 
+use davidrs::RuntimeError;
 use davidrs::client::{self, Limits};
 use davidrs::http::{HeaderName, HeaderValue};
 use davidrs::http::{HttpResponse, Public};
 use davidrs::mcp::openapi::{OpenApi, UPSTREAM_REFUSED, UPSTREAM_UNAVAILABLE};
-use davidrs::mcp::{Server, PROTOCOL_VERSION};
-use davidrs::RuntimeError;
+use davidrs::mcp::{PROTOCOL_VERSION, Server};
 use lambda_http::Body;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use support::server::{self, Recorded};
 
 /// Paths are written in sorted order, so the tools come out in the same

@@ -10,10 +10,61 @@ use std::future::Future;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::{Context, Deadline, Invocation, RuntimeError};
+
+/// The invocation error Lambda records when a handler fails: an `errorType`
+/// and an `errorMessage`.
+///
+/// A handler's error becomes one through `Into<Diagnostic>`. `lambda_runtime`
+/// converts `String`, `&'static str`, `std::io::Error` and boxed errors, with
+/// their Rust type name as `errorType`; [`RuntimeError`] gives its variant,
+/// such as `DeadlineExceeded`. Implement `From<YourError> for Diagnostic` to
+/// choose the `errorType` yourself, which is what a Step Functions `Retry` or
+/// `Catch` matches in `ErrorEquals`:
+///
+/// ```
+/// use davidrs::runtime::Diagnostic;
+///
+/// /// The failures of a payment step.
+/// enum PaymentError {
+///     Declined,
+/// }
+///
+/// impl From<PaymentError> for Diagnostic {
+///     fn from(error: PaymentError) -> Self {
+///         match error {
+///             PaymentError::Declined => Diagnostic {
+///                 error_type: "PaymentDeclined".to_owned(),
+///                 error_message: "the card was declined".to_owned(),
+///             },
+///         }
+///     }
+/// }
+///
+/// let recorded = Diagnostic::from(PaymentError::Declined);
+/// assert_eq!(recorded.error_type, "PaymentDeclined");
+/// ```
+pub use lambda_runtime::Diagnostic;
+
+/// The variant as `errorType`, so a workflow can match a deadline or a limit
+/// by name, and the error's `Display` as the message.
+impl From<RuntimeError> for Diagnostic {
+    fn from(error: RuntimeError) -> Self {
+        let error_type = match error {
+            RuntimeError::Configuration(_) => "Configuration",
+            RuntimeError::DeadlineExceeded { .. } => "DeadlineExceeded",
+            RuntimeError::LimitExceeded { .. } => "LimitExceeded",
+            RuntimeError::Other { .. } => "Other",
+        };
+        Self {
+            error_type: error_type.to_owned(),
+            error_message: error.to_string(),
+        }
+    }
+}
 
 /// Lambda's maximum function timeout.
 pub(crate) const MAX_FUNCTION_TIMEOUT: Duration = Duration::from_secs(15 * 60);
@@ -41,7 +92,9 @@ pub(crate) fn loop_failure(error: lambda_runtime::Error) -> RuntimeError {
 /// Returns a [`RuntimeError`] when the loop itself fails, such as when the
 /// Runtime API is unreachable. A handler error, a payload that does not
 /// deserialize and a handler that overruns its budget are each reported to
-/// Lambda as an invocation error, and the loop goes on.
+/// Lambda as an invocation error, and the loop goes on. The handler's error
+/// becomes the invocation error through `Into<`[`Diagnostic`]`>`, which
+/// decides its `errorType`; an overrun is a `DeadlineExceeded`.
 ///
 /// # Examples
 ///
@@ -69,7 +122,7 @@ where
     App: Send + Sync + 'static,
     In: DeserializeOwned + Send,
     Out: Serialize,
-    E: std::fmt::Display,
+    E: Into<Diagnostic>,
     H: Fn(Arc<App>, In, Context<()>) -> F + Send + Sync,
     F: Future<Output = Result<Out, E>> + Send,
 {
@@ -88,8 +141,8 @@ where
             deadline
                 .run(work)
                 .await
-                .map_err(lambda_runtime::Error::from)?
-                .map_err(|error| lambda_runtime::Error::from(error.to_string()))
+                .map_err(Diagnostic::from)?
+                .map_err(Into::<Diagnostic>::into)
         }
     });
     lambda_runtime::Runtime::new(service)

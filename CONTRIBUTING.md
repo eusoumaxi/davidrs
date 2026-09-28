@@ -25,6 +25,21 @@ A doc comment is short and plain:
 
 Write for a developer reading the item for the first time. No history ("moved from", "used to", "legacy", "workaround"), no internal jargon, no first person.
 
+## The guide
+
+Chapters live in `docs/` and are included from `src/guide.rs`. Rustdoc on the item is the reference: it says what the item does. A guide chapter exists only when a reader still needs to know **when** to use it, **what to configure around it**, **what a caller or Lambda should observe**, and **what to change when that is not what they observe**.
+
+A chapter that only restates the rustdoc should not be added. Update the reading map at the top of `src/guide.rs` when you add one, so the index stays a list of jobs rather than a list of files.
+
+Write the chapter so that someone who has not seen the code can do all four of these without guessing:
+
+1. Tell, from the first paragraph, whether this is the page for the job they have, which Cargo features to enable, and which other chapter to open instead.
+2. Follow one working path. Name the response, the status or the Lambda behaviour they should see when it works.
+3. Recognise the failure they are likely to hit — a platform setting left off, a feature unified away by the workspace, a `200` that did not do the whole batch — and know what to change.
+4. Find the boundary: what this module will not do, and which other tool does that job.
+
+Keep the examples compilable. They run as doctests. Prefer a runnable example to a paragraph that describes one. Neutral vocabulary, as in the design rules above. When a limit comes from AWS, cite the AWS page, as the security chapter does.
+
 ## Tests
 
 - Tests live in `tests/`, one file per area, and exercise the **public API** only. `src/` contains no `#[cfg(test)]` code, so every source file reads as documentation plus implementation.
@@ -43,7 +58,9 @@ scripts/check.sh coverage         # line coverage (needs cargo-llvm-cov)
 git config core.hooksPath .githooks   # once per clone: check branch names and commit messages locally
 ```
 
-Use Rust 1.98.1 (pinned in `rust-toolchain.toml`) and the committed `Cargo.lock`. The `spelling`, `workflows` and `deny` steps need [`typos`](https://github.com/crate-ci/typos), [`actionlint`](https://github.com/rhysd/actionlint) with [`shellcheck`](https://www.shellcheck.net), and [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny); `scripts/check.sh` skips them when they are not installed, CI never does.
+Default features are empty, so an editor that analyses the default build greys out every feature-gated module and test. `.vscode/settings.json` makes rust-analyzer analyse all features and run clippy in VS Code and Cursor; in another editor, set rust-analyzer's `cargo.features` to `"all"`.
+
+Develop with Rust 1.98.1 (pinned in `rust-toolchain.toml`) and the committed `Cargo.lock`. The crate supports Rust 1.94.1 and later (`rust-version`, the floor the AWS SDK sets): `scripts/check.sh msrv` compiles everything with it, so do not use a newer standard-library API without raising `rust-version` in the same change. The `spelling`, `workflows` and `deny` steps need [`typos`](https://github.com/crate-ci/typos), [`actionlint`](https://github.com/rhysd/actionlint) with [`shellcheck`](https://www.shellcheck.net), and [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny); `scripts/check.sh` skips them when they are not installed, CI never does.
 
 ## Branches
 

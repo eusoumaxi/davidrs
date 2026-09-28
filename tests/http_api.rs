@@ -8,8 +8,8 @@
 //! downstream crate can do.
 #![cfg(feature = "http")]
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use davidrs::http::{
@@ -637,10 +637,10 @@ mod logs {
     use std::io::Write;
     use std::sync::{Arc, Mutex};
 
-    use davidrs::http::{Failure, Json, Request, StatusCode};
     use davidrs::Context;
+    use davidrs::http::{Failure, Json, Request, StatusCode};
 
-    use super::{api, decode_item, post, App, Item};
+    use super::{App, Item, api, decode_item, post};
 
     /// Collects everything the subscriber writes.
     #[derive(Clone, Default)]

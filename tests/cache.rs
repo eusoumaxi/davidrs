@@ -1,8 +1,8 @@
 //! The re-exported Moka types behave as Moka documents them.
 #![cfg(feature = "cache")]
 
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use davidrs::cache::{Cache, CacheBuilder, EvictionPolicy};

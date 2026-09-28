@@ -4,27 +4,58 @@
 //! Nothing in this crate installs a global subscriber on its own. That is a
 //! process-wide decision, and it belongs to the binary's `main`.
 
+use tracing_subscriber::Layer;
 use tracing_subscriber::filter::LevelFilter;
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::util::SubscriberInitExt as _;
-use tracing_subscriber::Layer;
 
-/// The level in `RUST_LOG`: `INFO` when it is unset or not a bare level,
-/// and `ERROR` when it is empty, as `tracing` parses it.
+/// The level to log at: `RUST_LOG`, else `AWS_LAMBDA_LOG_LEVEL`, else `INFO`.
 ///
 /// Only a bare level is read (`debug`, `WARN`, `off`, `3`). Directives such as
 /// `info,my_crate=debug` need `tracing-subscriber`'s `env-filter`, which pulls
-/// in `regex`, a large dependency for a Lambda binary.
+/// in `regex`, a large dependency for a Lambda binary. An empty `RUST_LOG`
+/// reads as `ERROR`, as `tracing` parses it.
+///
+/// `AWS_LAMBDA_LOG_LEVEL` is the application log level Lambda's advanced
+/// logging controls set in the function's configuration; its `FATAL` reads as
+/// `ERROR`. A value that is not a level counts as unset.
 #[must_use]
 pub fn level_from_env() -> LevelFilter {
-    std::env::var("RUST_LOG")
+    let rust_log = std::env::var("RUST_LOG")
         .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(LevelFilter::INFO)
+        .and_then(|value| value.parse().ok());
+    let lambda = || {
+        std::env::var("AWS_LAMBDA_LOG_LEVEL")
+            .ok()
+            .and_then(|value| match value.trim() {
+                fatal if fatal.eq_ignore_ascii_case("fatal") => Some(LevelFilter::ERROR),
+                "" => None,
+                level => level.parse().ok(),
+            })
+    };
+    rust_log.or_else(lambda).unwrap_or(LevelFilter::INFO)
 }
 
-/// Installs a plain-text subscriber at [`level_from_env`] as the process's
-/// global default.
+/// A global filter that drops the span `lambda_runtime` opens around every
+/// invocation (`Lambda runtime invoke`), and nothing else.
+///
+/// The pipelines open their own invocation span with the same request id, so
+/// the runtime's span only doubles every log line's prefix, and with `otel` it
+/// would be exported as a separate trace of its own. [`init`] and
+/// [`telemetry::init`](super::init) install it; add it to a subscriber you
+/// assemble yourself.
+#[must_use]
+pub fn runtime_span_filter<S>() -> impl Layer<S>
+where
+    S: tracing::Subscriber,
+{
+    tracing_subscriber::filter::filter_fn(|metadata| {
+        !(metadata.is_span() && metadata.target() == "lambda_runtime::layers::trace")
+    })
+}
+
+/// Installs a plain-text subscriber at [`level_from_env`], with
+/// [`runtime_span_filter`], as the process's global default.
 ///
 /// # Errors
 ///
@@ -33,6 +64,7 @@ pub fn level_from_env() -> LevelFilter {
 pub fn init() -> Result<(), crate::RuntimeError> {
     tracing_subscriber::registry()
         .with(level_from_env())
+        .with(runtime_span_filter())
         .with(text_layer())
         .try_init()
         .map_err(|error| crate::RuntimeError::other("installing the log subscriber", error))

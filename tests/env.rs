@@ -3,9 +3,11 @@
 //! Setting a variable while another thread reads the environment is a data
 //! race, so every test holds [`ENVIRONMENT`] while it runs.
 
+mod support;
+
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use davidrs::{list_env, optional_env, required_env, RuntimeError};
+use davidrs::{RuntimeError, list_env, optional_env, required_env};
 
 /// Serializes the tests of this file.
 static ENVIRONMENT: Mutex<()> = Mutex::new(());
@@ -14,8 +16,8 @@ static ENVIRONMENT: Mutex<()> = Mutex::new(());
 fn set(name: &str, value: Option<&str>) -> MutexGuard<'static, ()> {
     let guard = ENVIRONMENT.lock().unwrap_or_else(PoisonError::into_inner);
     match value {
-        Some(value) => std::env::set_var(name, value),
-        None => std::env::remove_var(name),
+        Some(value) => support::env::set(name, value),
+        None => support::env::remove(name),
     }
     guard
 }
