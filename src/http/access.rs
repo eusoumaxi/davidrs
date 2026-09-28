@@ -83,12 +83,11 @@
 //! gateway claims off with [`Access::gateway_claims`] and verify tokens here.
 //!
 //! A tenant in a [`Grant`] is membership: a caller the policy checked belongs
-//! to it. There are two exceptions. In a [`public`](Tenancy::public)
+//! to it. In a [`public`](Tenancy::public)
 //! tenancy, an anonymous request may name any tenant as context (a
 //! storefront, a public catalogue); a handler must not treat that tenant as
-//! membership. And the tenant [`Tenancy::or_else`] derives for a caller who
-//! names none is not checked against membership: derive it from the
-//! caller's own tenants.
+//! membership. A tenant derived by [`Tenancy::or_else`] is checked against
+//! membership just like an explicitly selected tenant.
 
 use std::fmt;
 use std::marker::PhantomData;
@@ -235,17 +234,23 @@ impl Claims {
     /// An HTTP API JWT authorizer hands the function every claim as a string:
     /// an array becomes `"[a b]"`, and an object — Keycloak's `realm_access`,
     /// an organization, a namespaced claim holding a map — becomes text that
-    /// is no longer JSON. The `Authorization` header still carries the token
-    /// the authorizer verified, so its payload can be read as it is, without
-    /// verifying the signature a second time.
+    /// is no longer JSON. This helper reads the original token's payload
+    /// without verifying its signature a second time.
     ///
     /// Returns `None` unless the request carries authorizer claims (see
     /// [`Claims::from_gateway`]) with an `iss`, the header holds a bearer
     /// token of at most 8 KiB, and every string claim the token and the
-    /// authorizer both carry is equal. A route without an authorizer, or a
-    /// token the authorizer did not check, is never read. The signature is
-    /// not checked here, so the module's trust notes apply exactly as they do
-    /// to gateway claims.
+    /// authorizer both carry is equal. These consistency checks do not prove
+    /// that the authorizer verified this token.
+    ///
+    /// # Trust
+    ///
+    /// Enable this only when the authorizer verifies the exact bearer token
+    /// in `Authorization` and no integration rewrites that header. An
+    /// authorizer using a cookie, another header or a query parameter does
+    /// not establish that trust. Otherwise use [`Claims::from_gateway`] or
+    /// verify the bearer token in the function. The module's restrictions
+    /// on direct Lambda invocation also apply.
     ///
     /// # Examples
     ///
@@ -439,8 +444,8 @@ impl<C> Tenancy<C> {
     /// The tenant of a caller who sends no header — for example the only
     /// tenant they belong to.
     ///
-    /// The tenant it returns is not checked with the membership rule, so
-    /// choose it among the caller's own tenants.
+    /// The tenant it returns must pass the same membership rule as a tenant
+    /// selected by a header.
     #[must_use]
     pub fn or_else(
         mut self,
@@ -468,7 +473,14 @@ impl<C> Tenancy<C> {
             (Some(_), None) if !self.public => Err(refusal(forbidden)),
             (Some(tenant), _) => Ok(Some(tenant.to_owned())),
             (None, Some(caller)) => {
-                Ok(self.fallback.as_ref().and_then(|fallback| fallback(caller)))
+                let tenant = self.fallback.as_ref().and_then(|fallback| fallback(caller));
+                if tenant
+                    .as_deref()
+                    .is_some_and(|tenant| !(self.member)(caller, tenant))
+                {
+                    return Err(refusal(forbidden));
+                }
+                Ok(tenant)
             }
             (None, None) => Ok(None),
         }
@@ -632,8 +644,9 @@ impl<C, Who, Where> Access<C, Who, Where> {
     /// their JSON types, instead of the authorizer's strings. Off by default.
     ///
     /// Turn it on when a claim is an object, such as Keycloak's
-    /// `realm_access`; see [`Claims::from_gateway_token`] for when the token
-    /// is read. A request whose token cannot be read that way is identified
+    /// `realm_access`, only if the authorizer verifies the exact
+    /// `Authorization` bearer token; see [`Claims::from_gateway_token`]'s
+    /// trust requirements. A request whose token cannot be read is identified
     /// from the authorizer's claims, as without this setting.
     #[must_use]
     pub fn gateway_token_claims(mut self, read: bool) -> Self {

@@ -1,7 +1,8 @@
 //! An SQS consumer: a typed message body and an explicit delete or retry.
 //!
-//! Needs no AWS account: run it with `cargo lambda watch --example queue
-//! --features queue,logs` and send it an SQS event with `cargo lambda invoke`.
+//! Needs no AWS account: copy this file into a binary crate with `queue` and
+//! `logs` enabled, run `cargo lambda watch`, and send it an SQS event with
+//! `cargo lambda invoke`. See `examples/README.md` for the local setup.
 
 use std::sync::Arc;
 

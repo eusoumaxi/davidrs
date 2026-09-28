@@ -1,6 +1,6 @@
 //! Bounded JWKS retrieval and refresh.
 //!
-//! An unknown `kid` is the signal to refresh, and it is fully
+//! An expired cache or an unknown `kid` triggers a refresh. The key id is fully
 //! attacker-controlled: "unknown kid, go fetch" makes every forged token an
 //! outbound request. Three bounds prevent that:
 //!
@@ -36,8 +36,11 @@ pub(crate) struct Jwk {
     pub(crate) kid: String,
     pub(crate) n: String,
     pub(crate) e: String,
-    #[serde(default)]
-    pub(crate) kty: Option<String>,
+    kty: String,
+    alg: Option<String>,
+    #[serde(rename = "use")]
+    usage: Option<String>,
+    key_ops: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -59,6 +62,7 @@ pub(crate) struct KeyStore {
     /// When the last refresh failed, if the most recent one did.
     failed_at: RwLock<Option<Instant>>,
     min_interval: Duration,
+    cache_ttl: Duration,
 }
 
 /// The longest pause after a failed refresh before another is attempted.
@@ -69,7 +73,12 @@ pub(crate) struct KeyStore {
 const FAILURE_COOLDOWN: Duration = Duration::from_secs(5);
 
 impl KeyStore {
-    pub(crate) fn new(http: reqwest::Client, url: String, min_interval: Duration) -> Self {
+    pub(crate) fn new(
+        http: reqwest::Client,
+        url: String,
+        min_interval: Duration,
+        cache_ttl: Duration,
+    ) -> Self {
         Self {
             http,
             url,
@@ -77,12 +86,16 @@ impl KeyStore {
             refreshing: tokio::sync::Mutex::new(()),
             refreshed_at: RwLock::new(None),
             failed_at: RwLock::new(None),
-            min_interval,
+            min_interval: min_interval.min(cache_ttl),
+            cache_ttl,
         }
     }
 
     /// Looks up a key. Takes the read lock only long enough to clone.
     pub(crate) fn get(&self, kid: &str) -> Option<Jwk> {
+        if self.since_refresh()? >= self.cache_ttl {
+            return None;
+        }
         self.keys.read().ok()?.get(kid).cloned()
     }
 
@@ -140,11 +153,13 @@ impl KeyStore {
 
     /// Fetches the document and replaces the key map.
     ///
-    /// Only RSA keys are kept, at most [`MAX_KEYS`] of them. A key without
-    /// `kty` counts as RSA, because some providers omit it. Entries without a
-    /// `kid`, `n` and `e`, such as elliptic-curve keys, are skipped rather
-    /// than failing the whole document.
+    /// Keeps at most [`MAX_KEYS`] RSA keys compatible with RS256 signature
+    /// verification. Other algorithms, encryption keys and keys whose
+    /// operations exclude verification are skipped.
     async fn fetch(&self) -> Result<(), RuntimeError> {
+        if let Ok(mut slot) = self.failed_at.write() {
+            *slot = Some(Instant::now());
+        }
         let outcome = self.download().await;
         let failed_at = if outcome.is_err() {
             Some(Instant::now())
@@ -164,7 +179,7 @@ impl KeyStore {
             .get(&self.url)
             .send()
             .await
-            .map_err(|error| RuntimeError::other("fetching the JWKS", error))?;
+            .map_err(|error| crate::client::send_error("fetching the JWKS", error))?;
         if !response.status().is_success() {
             return Err(RuntimeError::message(format!(
                 "the JWKS endpoint answered {}",
@@ -176,7 +191,15 @@ impl KeyStore {
             .keys
             .into_iter()
             .filter_map(|key| serde_json::from_value::<Jwk>(key).ok())
-            .filter(|key| key.kty.as_deref().is_none_or(|kty| kty == "RSA"))
+            .filter(|key| {
+                key.kty == "RSA"
+                    && key.alg.as_deref().is_none_or(|alg| alg == "RS256")
+                    && key.usage.as_deref().is_none_or(|usage| usage == "sig")
+                    && key
+                        .key_ops
+                        .as_ref()
+                        .is_none_or(|ops| ops.iter().any(|op| op == "verify"))
+            })
             .take(MAX_KEYS)
             .map(|key| (key.kid.clone(), key))
             .collect();

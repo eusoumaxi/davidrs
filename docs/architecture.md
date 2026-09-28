@@ -115,7 +115,7 @@ Decoding and admission are the handler's here: a streamed endpoint often decides
 | Direct invocation | [`runtime::run`](crate::runtime::run) | any payload `T` | any response `U` |
 | Streamed, any payload | [`streaming::run`](crate::streaming::run) | any payload `T` | a head and a [`StreamBody`](crate::streaming::StreamBody) |
 
-All of them run the handler under the invocation deadline and, with `logs`, open one tracing span per invocation. They decode the payload before the handler runs and report the handler's failures to Lambda as invocation errors; only the HTTP pipelines render failures themselves.
+All of them run the handler under the invocation deadline and, with `logs`, open one tracing span per invocation. They decode the payload before the handler runs. Direct, event and schedule handlers report errors to Lambda as invocation failures; SQS reports individual failed message ids in its partial-batch response. A streamed producer reports errors through its body after headers have been sent.
 
 ## Failures
 
@@ -130,7 +130,7 @@ A [`Failure`](crate::http::Failure) is the only thing an HTTP handler returns on
 | kind | never | the stage that failed: admission, decode, policy, handler, serialization, deadline |
 | headers | yes | `Retry-After`, `RateLimit`, `Allow` survive rendering |
 
-[`public_message`](crate::http::Failure::public_message) returns the message of a 4xx and a fixed `InternalServerError` for every 5xx, however the failure was built. Renderers can only read the message through it, which makes a leaking 5xx impossible rather than unlikely. Default logs record the operation, the request id, the code and the kind — never the detail.
+[`public_message`](crate::http::Failure::public_message) returns the message of a 4xx and a fixed `InternalServerError` for every 5xx, however the failure was built. The built-in renderers use it; custom renderers must do the same. `internal_detail` and `Debug` expose diagnostic information and must not be sent to clients. Default logs record the operation, request id, code and kind, without the detail.
 
 The pipelines raise their own failures under the codes in [`http::codes`](crate::http::codes). An application whose clients expect other codes maps them in its renderer, which sees the whole failure and owns the wire format.
 
@@ -161,7 +161,13 @@ The per-service modules own partial outcomes and bounds, and nothing else. Keys,
 
 ## Concurrency
 
-Shared state is immutable behind `Arc`. Independent I/O uses `join` or bounded task sets. No lock is held across an await, and the JWKS cache coalesces refreshes behind an async mutex with a minimum interval, so a flood of unknown key ids causes one fetch. A timeout cancels local waiting; it cannot undo a remote write, so use idempotency where a write can complete after the connection is lost.
+Shared state is shared through `Arc`; applications synchronize any interior
+mutation. Independent I/O can use `join` or bounded task sets. Synchronous
+locks are never held across an await. The JWKS cache deliberately holds one
+async mutex during a refresh to coalesce concurrent requests. A minimum
+interval limits refreshes, and a finite cache lifetime expires known keys.
+A timeout cancels local waiting; it cannot undo a remote write, so use
+idempotency where a write can complete after the connection is lost.
 
 ## Where a change belongs
 

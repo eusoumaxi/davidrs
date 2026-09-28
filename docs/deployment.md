@@ -78,20 +78,18 @@ strip = "symbols"
 
 Cargo Lambda adds `strip`, `lto`, `codegen-units` and `panic` itself when the profile leaves them out. With `panic = "abort"`, a panic ends the sandbox and the next invocation starts cold; `davidrs` does not panic on a request path, and your handlers should not either — return a [`Failure`](crate::http::Failure) instead.
 
-## What a function weighs
+## Measuring a function
 
-Measured with Cargo Lambda 1.9 for `arm64` with the profile above, from this repository's examples:
+Build each function with its production features and record the compiler,
+Cargo Lambda version, architecture and release profile alongside its package
+size. Include every SDK client and telemetry feature used in production.
+Compare cold `Init Duration`, warm duration, memory use and error rates under
+the same memory setting and workload. Upstream latency and initialization
+can dominate the result.
 
-| Function        | Features                 | Zip    | Binary |
-| --------------- | ------------------------ | ------ | ------ |
-| SQS consumer    | `queue`, `logs`          | 492 KB | 1.0 MB |
-| Streamed HTTP   | `http-stream`, `logs`    | 677 KB | 1.4 MB |
-| Buffered HTTP   | `http`                   | 754 KB | 1.5 MB |
-| HTTP + DynamoDB | `http`, `dynamo`, `logs` | 2.2 MB | 4.6 MB |
-
-The first AWS SDK client is the largest single addition, about 1.4 MB zipped. Production functions with two or three clients, outbound HTTP and X-Ray tracing weigh 1.4–2.5 MB zipped. Everything that is not a feature you enabled is not in the binary: no `aws-config` credential chain, no OpenSSL, no `regex`, no certificate store parsed at startup.
-
-A small binary starts fast. Cold starts measured in production are 60–120 ms of `Init Duration`: configuration and client setup take under 10 ms, and the rest is the platform starting the sandbox and the first TLS connections. The pipeline itself costs about a microsecond per request.
+There is no published benchmark suite in this repository, so package sizes
+and latency are not guarantees. `Trust::NativeRoots` reads the system trust
+store; `Trust::Pem` and `client::build` use supplied or compiled-in roots.
 
 ## How a function connects
 

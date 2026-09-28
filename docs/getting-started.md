@@ -13,11 +13,13 @@ You do not need an AWS account for anything in this chapter. Deployment, IAM and
 ## Create the function
 
 ```bash
-cargo lambda new hello
+cargo lambda new --http hello
 cd hello
 ```
 
-`cargo lambda new` writes a binary crate whose name is the function name. Open `Cargo.toml` and replace the `davidrs` dependency so that default features stay off and only the capabilities you use are compiled in:
+`cargo lambda new --http` writes a binary crate whose name is the function name.
+Replace its generated `[dependencies]` section with the following; the template
+does not include `davidrs`. Keep the `[package]` section:
 
 ```toml
 [dependencies]
@@ -88,7 +90,7 @@ Read it in the order the process actually runs.
 
 **`App::from_env` runs once, in `main`, before the loop.** Lambda reuses the process for later invocations, so clients, table names and this greeting are built at cold start and shared as `Arc<App>`. [`optional_env`](crate::optional_env) treats a missing or blank `GREETING` as unset and the function falls back to `"Hello"`. A value the function cannot run without is [`required_env`](crate::required_env): the error names the variable, never the value, and the cold start fails. That is what you want. A missing variable discovered on the first real request looks like a healthy deploy until someone calls it.
 
-**`telemetry::init("hello")` installs logging.** The string is the service name used when neither `OTEL_SERVICE_NAME` nor `AWS_LAMBDA_FUNCTION_NAME` is set, which is the case on your laptop. Bind the guard to `_telemetry` and let it live until `main` returns. Dropping it early shuts the subscriber down while the loop is still running. With the `otel` feature the same call also exports X-Ray traces. [Telemetry](crate::guide::telemetry) is the full account.
+**`telemetry::init("hello")` installs logging.** With `otel`, the string is the fallback service name when neither `OTEL_SERVICE_NAME` nor `AWS_LAMBDA_FUNCTION_NAME` is set. Bind the guard to `_telemetry` until `main` returns so the trace provider stays alive. With `logs` alone the global log subscriber stays installed for the process lifetime. [Telemetry](crate::guide::telemetry) covers both modes.
 
 **`Api::new` is the pipeline, configured once.** The three arguments are the only policy most first functions need:
 
@@ -100,7 +102,7 @@ Read it in the order the process actually runs.
 
 **The closure is the decoder, and it runs before the handler.** `|request| request.path::<HelloPath>()` reads the path parameters API Gateway or the local emulator extracted and deserializes them into `HelloPath`. It is synchronous. A path that does not fit the struct becomes a `400` and `hello` never runs. A JSON body uses `request.json::<T>()` instead; the [HTTP chapter](crate::guide::http) lists every reader and the status each one returns.
 
-**`hello` is the only business logic.** It receives the shared `App`, the decoded path, and a [`Context`](crate::Context). The context carries the request id, the trace and the [deadline](crate::guide::invocations). This handler ignores the context because it does no I/O. A handler that calls DynamoDB, another HTTP service, or Secrets Manager should bound that await with the deadline, or a retry can outlive the invocation. It returns [`Json`](crate::http::Json) on success and a [`Failure`](crate::http::Failure) otherwise. Build a client-visible rejection with `Failure::new`. Build a server failure with `Failure::internal` or `Failure::from_error`: the detail stays in your logs and the client always receives the fixed message `InternalServerError`.
+**`hello` is the only business logic.** It receives the shared `App`, the decoded path, and a [`Context`](crate::Context). The context carries the request id, the trace and the [deadline](crate::guide::invocations). This handler ignores the context because it does no I/O. A handler that calls DynamoDB, another HTTP service, or Secrets Manager should bound that await with the deadline, or a retry can outlive the invocation. It returns [`Json`](crate::http::Json) on success and a [`Failure`](crate::http::Failure) otherwise. Build a client-visible rejection with `Failure::new`. Build a server failure with `Failure::internal` or `Failure::from_error`: the detail is available for a deliberate diagnostic and the client receives the fixed message `InternalServerError`.
 
 **`Api::run` starts the Lambda loop and does not return** until the runtime itself fails. `main`'s `Result` is that failure, not a request failure. A request failure is a response.
 
@@ -164,10 +166,22 @@ In production the `{name}` path parameter comes from the API Gateway route. The 
 ```
 
 The left side is the path you will `curl`. The right side is the binary name.
+See Cargo Lambda's [HTTP project creation](https://www.cargo-lambda.info/commands/new.html)
+and [local routing](https://www.cargo-lambda.info/commands/watch.html#custom-http-routes).
+
+Open the function directory in VS Code or Cursor and install the
+`rust-lang.rust-analyzer` extension. It reads this function's enabled Cargo
+features automatically. Run `cargo check` in the integrated terminal before
+starting the emulator; no AWS account is needed for this example.
 
 ```bash
-cargo lambda watch                       # a local Lambda emulator on :9000
-curl http://localhost:9000/hello/world   # {"message":"Hello, world"}
+cargo lambda watch                      # leave this terminal running
+```
+
+In a second terminal:
+
+```bash
+curl http://localhost:9000/hello/world    # {"message":"Hello, world"}
 ```
 
 `cargo lambda watch` serves binary crates only. The programs under this repository's `examples/` are examples, not binaries of a watchable crate. To run one, copy it into `src/main.rs` of a crate made with `cargo lambda new`, with the same features. [examples/README.md](https://github.com/eusoumaxi/davidrs/blob/main/examples/README.md) says which features each program needs. `cargo check --example http --features http` compiles an example in this repository without running it.

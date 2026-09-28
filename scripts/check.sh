@@ -134,14 +134,14 @@ coverage() {
 }
 
 # <type>/<description>: lowercase words joined by `-` (dots allowed, for a
-# version). `main`, Dependabot's branches and the branches GitHub's revert
+# version). Dependabot's branches and the branches GitHub's revert
 # button creates are accepted as they are. A detached HEAD (a rebase, a
 # bisect) has no name and passes.
 branch() {
   local LC_ALL=C name
   name=${1:-$(git symbolic-ref --quiet --short HEAD || true)}
   local conventional="^($TYPES)/[a-z0-9]+([.-][a-z0-9]+)*$"
-  if [[ -z $name || $name == main || $name == dependabot/* || $name =~ ^revert-[0-9]+- ]]; then
+  if [[ -z $name || $name == dependabot/* || $name =~ ^revert-[0-9]+- ]]; then
     return 0
   fi
   if [[ ! $name =~ $conventional ]]; then

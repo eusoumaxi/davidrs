@@ -1,6 +1,6 @@
 # Bearer tokens
 
-Enable `auth`. It brings `client`, which fetches the key set. [`Verifier`](crate::auth::Verifier) checks an RS256 JSON Web Token against the JWKS its issuer publishes. Use it when nothing in front of the function has already done that: a Function URL with auth type `NONE`, an MCP server, a direct invocation, or a second check you have chosen to keep. Build one verifier in `main` and keep it for the life of the process. The key cache lives there, so a warm invocation does not fetch the key set again.
+Enable `auth`. It brings `client`, which fetches the key set. [`Verifier`](crate::auth::Verifier) checks an RS256 JSON Web Token against the JWKS its issuer publishes. Use it when nothing in front of the function has already done that: a Function URL with auth type `NONE`, an MCP server, a direct invocation, or a second check you have chosen to keep. Build one verifier in `main` and keep it for the life of the process. Warm invocations reuse fresh keys; even a known key is refreshed when the cache expires.
 
 If API Gateway or a Cognito authorizer already verified the token, do not verify it again. [`Access`](crate::http::access::Access) reads the claims the authorizer wrote. A second verification adds a key fetch and proves nothing new. That path is [tokens the gateway already verified](crate::guide::access#tokens-the-gateway-already-verified). The [security chapter](crate::guide::aws_security) compares the two.
 
@@ -11,7 +11,7 @@ A [`VerifierConfig`](crate::auth::VerifierConfig) says what an acceptable token 
 Hand-written token checks tend to fail open in a few known ways:
 
 - **Trusting `alg`.** The header names the algorithm and the attacker writes the header. `none` skips the signature; `HS256` makes a naive verifier use the public key as an HMAC secret. Here anything but `RS256` is refused before a key is looked up.
-- **A fetch per unknown `kid`.** Refreshing the key set when a token names an unknown key is how key rotation is picked up, but the `kid` is also attacker-controlled. Here concurrent misses share one fetch, and no fetch happens again until [`min_refresh_interval`](crate::auth::VerifierConfig::min_refresh_interval) has passed since the last successful one — or, after a failed fetch, a short cooldown of at most five seconds. A flood of forged tokens costs the identity provider at most one request per interval, even while it is down.
+- **A fetch per unknown `kid`.** Refreshing the key set when a token names an unknown key is how key rotation is picked up, but the `kid` is also attacker-controlled. Here concurrent misses share one fetch, and no fetch happens again until [`min_refresh_interval`](crate::auth::VerifierConfig::min_refresh_interval) (capped by `cache_ttl`) has passed since the last successful one — or, after a failed fetch, a short cooldown of at most five seconds. A flood of forged tokens costs the identity provider at most one request per interval, even while it is down.
 - **Unbounded input.** A token over [`MAX_TOKEN_BYTES`](crate::auth::MAX_TOKEN_BYTES) (8 KiB) is refused before it is decoded. A key set over [`MAX_JWKS_BYTES`](crate::auth::MAX_JWKS_BYTES) (64 KiB) is refused while it is read, and at most [`MAX_KEYS`](crate::auth::MAX_KEYS) RSA keys are kept from it. Keys of other types are skipped.
 - **Overflowing `exp`.** Times are compared as floating-point seconds, so an absurd `exp` reads as far future or long past and never wraps into the opposite verdict.
 - **Any audience.** A token issued to another application of the same issuer is refused: a verifier accepts no token until its audiences are set, and matches `client_id` when a token has no `aud`, as an API Gateway JWT authorizer does.
@@ -22,7 +22,7 @@ Hand-written token checks tend to fail open in a few known ways:
 
 ### Build the verifier once
 
-Build it in `main` and keep it for the life of the process: the key cache lives in the verifier, so a warm invocation verifies without any request.
+Build it in `main` and keep it for the life of the process: the key cache lives in the verifier, so warm invocations reuse it until it expires.
 
 ```rust,no_run
 use davidrs::auth::{Verifier, VerifierConfig};
@@ -34,7 +34,7 @@ let config = VerifierConfig::new(
     "https://id.example.com/.well-known/jwks.json",
 )
 .with_audiences(vec!["web".to_owned(), "mobile".to_owned()])
-.with_required_claim("token_use", "id");
+.with_required_claim("token_use", "access");
 let verifier = Verifier::load(client::build(Limits::default())?, config).await?;
 # let _ = verifier;
 # Ok(())
@@ -44,6 +44,20 @@ let verifier = Verifier::load(client::build(Limits::default())?, config).await?;
 [`Verifier::load`](crate::auth::Verifier::load) fetches the key set before it returns, so an unreachable endpoint or a document with no usable RSA key fails the cold start, where a wrong URL is noticed at once. [`Verifier::deferred`](crate::auth::Verifier::deferred) returns immediately and fetches on the first verification instead; use it when many invocations never see a token, such as a function whose routes are mostly public.
 
 The leeway defaults to 60 s. Set the public [`leeway`](crate::auth::VerifierConfig::leeway) field to change it.
+
+Keys expire after one hour by default. Set [`with_cache_ttl`](crate::auth::VerifierConfig::with_cache_ttl)
+to match your key-removal requirements. Expired keys fail closed if the JWKS
+cannot be refreshed. Failed or cancelled fetches observe a cooldown, and
+concurrent refreshes share the same request. Configure a trusted HTTPS JWKS
+URL and build the client with `client::build` to bound the fetch and disable
+redirects.
+
+A key must declare `kty: RSA`. If present, `alg` must be `RS256`, `use` must
+be `sig`, and `key_ops` must permit `verify`, following
+[RFC 7517](https://www.rfc-editor.org/rfc/rfc7517.html#section-4).
+Tokens with a `crit` header or an unencoded payload are refused because this
+verifier supports no JOSE extensions; see
+[RFC 7515](https://www.rfc-editor.org/rfc/rfc7515.html#section-4.1.11).
 
 ### Turn it into a policy
 
@@ -126,8 +140,8 @@ assert_eq!(VerifyError::UnknownKey.to_string(), "no key matched the token");
 - **RS256 only.** `ES256`, `PS256`, `EdDSA` and HMAC tokens are refused.
 - **One issuer per verifier.** Build one verifier per issuer you accept.
 - **`exp` and `nbf`, not `iat`.** `exp` is required and `nbf` is honoured when present, both with the configured leeway and both as `NumericDate`s that may have a fraction. `iat` is not checked; read it from `VerifiedClaims` if your issuer relies on it.
-- **No revocation.** A token stays valid until it expires. A key removed from the key set stays trusted until an unknown `kid` causes the next refresh. Amazon Cognito documents the same for its revoked tokens — they still verify by signature and expiry — so keep access tokens short-lived.
-- **No background refresh.** The key set is fetched only by `load` and by an unknown `kid`, never on a timer.
+- **No per-token revocation.** Signature verification does not consult a revocation service. Keep access tokens short-lived. Key removal takes effect on the next refresh, bounded by `cache_ttl`; a removed key is never accepted after that refresh.
+- **No background refresh.** `load` fetches once; verification refreshes for an unknown key or an expired cache. No background task runs while Lambda is frozen.
 - **No authorization.** Roles, groups, tenants and permissions are claims the verifier does not interpret. Map them into your policy's scope.
 
 ## If every token is refused, or the wrong ones are accepted
@@ -138,5 +152,5 @@ assert_eq!(VerifyError::UnknownKey.to_string(), "no key matched the token");
 | `401` on a token that works in another application of the same issuer | The audience does not match | [`with_audiences`](crate::auth::VerifierConfig::with_audiences) must list this resource. A verifier with no audiences accepts nothing. Cognito access tokens often have `client_id` and no `aud`; the verifier matches `client_id` in that case, as API Gateway does. |
 | `401`, and [`VerifyError`](crate::auth::VerifyError) says the algorithm | The token is not RS256 | `ES256`, `PS256`, `EdDSA` and HMAC tokens are refused. This includes `none` and `HS256`. |
 | A revoked Cognito token still verifies | Revocation is not part of signature checks | Keep access tokens short. Cognito documents the same limitation for API Gateway authorizers. |
-| The identity provider is flooded with JWKS requests | Each unknown `kid` used to trigger its own fetch | Concurrent misses share one fetch, and a failed fetch waits out a cooldown of at most five seconds. If you still see a fetch per request, the verifier is being built inside the handler instead of in `main`. |
+| The identity provider is flooded with JWKS requests | A verifier is created for each invocation, or its refresh interval is too short | Concurrent misses share one fetch, and a failed fetch waits out a cooldown of at most five seconds. If you still see a fetch per request, the verifier is being built inside the handler instead of in `main`. |
 | The client receives a `401` whose body explains which check failed | The policy put [`VerifyError`](crate::auth::VerifyError) in the public message | Put it in [`Failure::with_detail`](crate::http::Failure::with_detail) and return one `401` for every variant. |

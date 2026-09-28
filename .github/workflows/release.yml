@@ -28,6 +28,7 @@ jobs:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
       - run: scripts/check.sh release "$GITHUB_REF_NAME"
 
@@ -52,6 +53,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Check whether this version is already on crates.io
         id: registry
         run: |
@@ -81,6 +84,8 @@ jobs:
         with:
           egress-policy: audit
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: scripts/check.sh release-notes "$GITHUB_REF_NAME" > notes.md
       - run: gh release create "$GITHUB_REF_NAME" --verify-tag --title "davidrs ${GITHUB_REF_NAME#v}" --notes-file notes.md
         env:

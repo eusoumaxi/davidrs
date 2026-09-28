@@ -295,6 +295,7 @@ async fn a_json_object_body_is_flattened_with_its_references_inlined() {
     );
     assert_eq!(schema["required"], json!(["item"]));
     assert_eq!(create["annotations"]["readOnlyHint"], false);
+    assert_eq!(create["annotations"]["destructiveHint"], true);
     assert_eq!(create["annotations"]["idempotentHint"], false);
 }
 
@@ -371,6 +372,41 @@ async fn a_call_is_one_request_with_the_callers_token_and_encoded_arguments() {
     assert_eq!(sent.header("x-tenant"), Some("t1"));
     assert_eq!(sent.header("accept"), Some("application/json"));
     assert!(sent.body.is_empty());
+}
+
+#[tokio::test]
+async fn dot_segments_cannot_redirect_a_tool_to_another_path() {
+    let upstream = upstream(200, "application/json", "{}").await;
+    let server = mcp(api(&upstream.url("/v1")).forward_caller_token());
+    for id in [".", ".."] {
+        let result = call(&server, "deleteOrder", json!({"id": id})).await;
+        assert!(text(&result).1);
+        assert!(text(&result).0.contains("ERROR_INVALID_ARGUMENTS"));
+    }
+    assert!(upstream.requests().is_empty());
+}
+
+#[tokio::test]
+async fn adjacent_path_parameters_cannot_form_a_dot_segment() {
+    let upstream = upstream(200, "application/json", "{}").await;
+    let document = json!({
+        "openapi": "3.1.0",
+        "paths": {
+            "/orders/{prefix}{id}": {"get": {
+                "operationId": "getOrder",
+                "parameters": [
+                    {"name": "prefix", "in": "path", "required": true, "schema": {"type": "string"}},
+                    {"name": "id", "in": "path", "required": true, "schema": {"type": "string"}}
+                ],
+                "responses": {"200": {"description": "Order"}}
+            }}
+        }
+    });
+    let api = OpenApi::new(&document, upstream.url("/v1"), http()).expect("document");
+    let result = call(&mcp(api), "getOrder", json!({"prefix": ".", "id": "."})).await;
+    assert!(text(&result).1);
+    assert!(text(&result).0.contains("ERROR_INVALID_ARGUMENTS"));
+    assert!(upstream.requests().is_empty());
 }
 
 #[tokio::test]

@@ -1,6 +1,6 @@
 ---
 name: davidrs
-description: Build AWS Lambda functions in Rust with the davidrs crate. HTTP endpoints behind API Gateway or Function URLs, SQS consumers with partial batch failures, EventBridge rules and schedules, direct invocations and other event sources (S3, DynamoDB Streams, Kinesis, SNS), DynamoDB, EventBridge publishing, Secrets Manager, outbound HTTP, and MCP servers for AI clients. Use when creating, changing, testing or deploying a Lambda function, or a Cargo workspace of functions, that uses davidrs; when choosing its features, writing Cargo.toml and main.rs, handlers, Failure or RuntimeError, deadlines and tests without an AWS account; or when running it locally and building it for arm64 with Cargo Lambda.
+description: Build, test and configure Rust AWS Lambda functions that use davidrs. Use when choosing crate features, wiring handlers, policies and deadlines, or working with its HTTP, event and AWS helpers. Includes local development with Cargo Lambda and account-free tests.
 license: MIT
 ---
 
@@ -17,7 +17,7 @@ When a call fails, read the matching guide chapter before changing the handler. 
 3. Write the handler: `async fn(Arc<App>, Input, Context<Scope>) -> Result<Output, Error>`.
 4. Wire `main`: telemetry guard, `Arc::new(App::from_env()?)`, one pipeline call.
 5. Test the handler without AWS, then check the function alone: `cargo check -p <function>`, `cargo test -p <function>`.
-6. Run it with `cargo lambda watch`, build it with `cargo lambda build --release --arm64`, deploy it with infrastructure as code.
+6. Run it locally with `cargo lambda watch` and build it with `cargo lambda build --release --arm64`. Prepare infrastructure as code for deployment; deploy only when requested.
 
 | The function… | Features | `main` ends with |
 | --- | --- | --- |
@@ -113,7 +113,7 @@ async fn main() -> Result<(), RuntimeError> {
 - Bounded work: body limits, page limits, bounded readers; partial outcomes reported as partial.
 - Enable only the features a function uses and check it alone (`cargo check -p`): Cargo unifies features across a workspace, which hides a missing one. One `[profile.release]`, at the workspace root.
 - Let the platform do what it can (API Gateway authorizers and throttling, AWS WAF, Cognito, SQS redrive, Lambda retries); the function does what only the application knows.
-- Behind an API Gateway authorizer the token is already verified: do not verify it again, map its claims with `Access` (`gateway_token_claims(true)` for nested claims). Verify tokens (`verify_bearer`) only where no authorizer sits in front.
+- Trust `Access` gateway claims only when API Gateway is the permitted invoker and its authorizer enforces the required checks. Use `gateway_token_claims(true)` for nested claims only when that authorizer verifies the exact, unchanged `Authorization` bearer token. Otherwise use gateway context alone or `verify_bearer`; matching issuer and text claims do not authenticate a token.
 - No panics on a request path: the release profile aborts, which ends the sandbox.
 
 ## References

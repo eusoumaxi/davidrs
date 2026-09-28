@@ -1,8 +1,8 @@
 //! The buffered HTTP pipeline for API Gateway and Function URL requests.
 //!
 //! One ordered pipeline serves one route; this is not a web framework. See
-//! [`Api`] for the steps, [`Request`] for bounded reads, [`Failure`] for why a
-//! 5xx cannot leak and [`ErrorRenderer`] for the wire shape of errors. HTTP
+//! [`Api`] for the steps, [`Request`] for bounded reads, [`Failure`] for safe
+//! public error messages and [`ErrorRenderer`] for the wire shape of errors. HTTP
 //! API and Function URL events are read by default; REST API events
 //! need the `apigw-rest` feature.
 //!

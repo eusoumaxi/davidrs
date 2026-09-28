@@ -4,7 +4,7 @@
 [![docs.rs](https://img.shields.io/docsrs/davidrs)](https://docs.rs/davidrs)
 [![CI](https://github.com/eusoumaxi/davidrs/actions/workflows/ci.yml/badge.svg)](https://github.com/eusoumaxi/davidrs/actions/workflows/ci.yml)
 [![MSRV](https://img.shields.io/crates/msrv/davidrs)](Cargo.toml)
-[![License: MIT](https://img.shields.io/crates/l/davidrs.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A small, feature-gated framework for AWS Lambda functions in Rust. You write the business logic. The crate owns the surrounding code that is easy to get subtly wrong: deadlines, the order of an HTTP request, error bodies that must not leak, and partial failures that must not be reported as success.
 
@@ -15,16 +15,15 @@ Start with the [introduction](https://eusoumaxi.github.io/davidrs/davidrs/guide/
 `davidrs` keeps the official `lambda_runtime` / `lambda_http` adapters and the AWS SDK as the transport, and owns what every function ends up writing around them:
 
 - **One absolute deadline per invocation.** Child budgets can only shrink, retries do not get a fresh allowance, and every adapter keeps a margin for cleanup before Lambda's own timeout.
-- **One ordered pipeline per trigger.** HTTP requests, buffered or streamed, run admission, decoding, authorization and the handler in a fixed order, and every failure — including the serialization of a success — reaches one error renderer. SQS, EventBridge, schedules and direct invocations decode their payload before the handler and report its failures to Lambda.
-- **Failures that cannot leak.** A failure keeps its public message and its internal detail apart, and every 5xx renders a fixed message however it was built.
-- **Bounded work everywhere.** Request bodies, upstream responses, decompressed payloads, paginated reads, retries and stream producers all have explicit limits, and say when they hit one.
+- **One ordered pipeline per trigger.** Buffered HTTP runs admission, decoding, authorization and the handler in order. Streamed HTTP runs preparation, CORS, negotiation, authorization and the handler. Both use one error renderer before the response starts. SQS, EventBridge, schedules and direct invocations decode their payload before the handler and report its failures to Lambda.
+- **Safe error rendering.** A failure keeps its public message and internal detail apart. The built-in renderers use a fixed message for every 5xx.
+- **Explicit limits.** Buffered request bodies, bounded upstream readers, decompressed payloads, paginated reads, retries and stream producers have limits and report when they hit one.
 - **Honest partial outcomes.** SQS batches report failures per record; `PutEvents`, `BatchWriteItem` and `BatchGetItem` per entry; a bounded read says whether it is complete.
 
 It is deliberately **not** a web framework: one Lambda serves one operation,
 so there is no router, no middleware stack, no dependency-injection container
-and no ORM. It adds structure at compile time and about a microsecond per
-request at run time: a function that only answers HTTP ships as a 0.5–0.75 MB
-zip and starts cold in well under 150 ms.
+and no ORM. Enable only the features each function needs. Measure package
+size, memory and latency with your own workload and deployment settings.
 
 Run it behind API Gateway with AWS WAF and Amazon Cognito: the platform verifies tokens, throttles and filters before the function runs, and the crate covers what only the application knows — the [security chapter](https://eusoumaxi.github.io/davidrs/davidrs/guide/aws_security/index.html) explains the split.
 
@@ -75,6 +74,8 @@ What each piece is doing:
 ```toml
 [dependencies]
 davidrs = { version = "0.1", default-features = false, features = ["http"] }
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
 Default features are empty. Name every capability the function uses. `http` is enough for the example; add `logs` when you want the log lines the tutorial turns on.
@@ -116,9 +117,11 @@ The documentation is split by the question you have, so a reference page is not 
 | What does this type or function do? | The API reference on the same site. Every public item has rustdoc. |
 | Can I copy a whole program? | [`examples/`](examples/), one program per trigger. [`examples/README.md`](examples/README.md) says how to compile and run each one. |
 | What does the crate guarantee, and what do I still have to decide? | [SECURITY.md](SECURITY.md) |
+| How do the modules and extension points fit together? | [Architecture](https://eusoumaxi.github.io/davidrs/davidrs/guide/architecture/index.html) |
 | How do I change the crate? | [CONTRIBUTING.md](CONTRIBUTING.md) |
 
-Code samples in the guide and in the rustdoc are compiled and run as tests. A sample that is printed matches the crate.
+Rust samples in the guide and API reference are checked as doctests. Samples
+marked `no_run` are compiled without contacting AWS or starting a runtime loop.
 
 ## Skill for AI coding agents
 

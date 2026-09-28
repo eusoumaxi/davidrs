@@ -6,9 +6,9 @@
 //! layers use. A datagram is a JSON header line, the `T1S` prefix for sampled
 //! traces, then base64 of an OTLP `ExportTraceServiceRequest`.
 //!
-//! A local datagram costs microseconds per span. Exporting OTLP over HTTPS
-//! would cost a network round trip on the request path, or a batch to flush
-//! before the sandbox freezes.
+//! Local UDP avoids an HTTPS round trip or a batch to flush before the
+//! sandbox freezes. Delivery is best effort: a successful send does not
+//! confirm that X-Ray received the trace.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 

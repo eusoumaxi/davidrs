@@ -65,7 +65,8 @@ async fn price(app: Arc<App>, quote: Quote, _: Context<()>) -> Result<Priced, Ru
     }
     Ok(Priced {
         order_id: quote.order_id,
-        total_cents: quote.quantity * app.rate_cents,
+        total_cents: quote.quantity.checked_mul(app.rate_cents)
+            .ok_or_else(|| RuntimeError::message("total exceeds the supported range"))?,
     })
 }
 

@@ -1,8 +1,8 @@
 # Introduction
 
-`davidrs` is a framework for writing AWS Lambda functions in Rust that are fast, small and correct by default, so the code you write is the business logic and nothing else.
+`davidrs` is a small framework for AWS Lambda functions in Rust. It gives each trigger an explicit pipeline and reusable safeguards, so handlers can focus on business logic.
 
-It is a thin layer over the official libraries. AWS maintains [`lambda_runtime`](https://docs.rs/lambda_runtime) and [`lambda_http`](https://docs.rs/lambda_http), which speak the Lambda Runtime API, and the AWS SDK for Rust, which speaks to the services. `davidrs` sits on top of them and owns the part every function otherwise writes by hand around them: deadlines, the order of the request pipeline, error rendering that cannot leak, bounded reads, partial-batch reporting, rate limits, access control and telemetry.
+It is a thin layer over the official libraries. AWS maintains [`lambda_runtime`](https://docs.rs/lambda_runtime) and [`lambda_http`](https://docs.rs/lambda_http), which speak the Lambda Runtime API, and the AWS SDK for Rust, which speaks to the services. `davidrs` sits on top of them and owns the part every function otherwise writes by hand around them: deadlines, the order of the request pipeline, built-in error rendering with fixed 5xx messages, bounded reads, partial-batch reporting, rate limits, access control and telemetry.
 
 ```text
 your handler            business logic: one async function per operation
@@ -21,7 +21,7 @@ Lambda Runtime API      the platform
 | Look up a type or a function | The API reference on this site. Each page says what the item does, what it returns, and when it fails. The examples there are the same code the guide walks through. |
 | Copy a whole program | `examples/` in the repository |
 
-You do not have to read the guide in order after the tutorial. Code samples in it are compiled and run as tests, so a sample that is printed matches the crate.
+You do not have to read the guide in order after the tutorial. Rust samples are checked as doctests; `no_run` examples are compiled without execution.
 
 ## Why it exists
 
@@ -33,22 +33,21 @@ Most of a Lambda function is the code around its handler, and every function wri
 - `BatchWriteItem` "succeeding" while it quietly leaves items unwritten;
 - a paginated read that stops at a limit and returns a partial list as if it were complete;
 - a streamed response whose producer task keeps calling upstream services after the client has gone;
-- tracing through a Lambda layer that adds half a second to every cold start.
+- telemetry setup that adds an exporter and a background task whose lifetime the function does not control.
 
-`davidrs` turns each of these into a rule it enforces by construction, so a handler cannot forget it.
+`davidrs` centralizes this runtime work. Application permissions, service configuration and business rules remain explicit extension points.
 
-## Measured results
+## Performance
 
-Measured on a production API, comparing the same endpoints before and after they moved from Node.js Lambda functions to Rust on `davidrs`, on arm64:
+Default features are empty, so each binary includes only the capabilities it
+uses. The framework runs in the function process and adds no local HTTP
+server. Package size and latency still depend on the compiler, enabled
+features, memory setting, initialization and upstream services.
 
-|  | Node.js | Rust on `davidrs` |
-| --- | --- | --- |
-| Cold start (Lambda `Init Duration`) | 800–1,300 ms | 60–120 ms |
-| Warm invocation, no upstream call | ~17 ms | ~5 ms |
-| Memory used | 175–300 MB | 20–75 MB |
-| Handler code, after the shared plumbing moved into the crate | ~2,000 lines | ~340 lines |
-
-In a warm invocation that calls an upstream service, nearly all of the time is that call: the framework's own overhead is measured in microseconds.
+This repository does not include a reproducible benchmark suite. Measure cold
+and warm invocations separately with your own workload; the
+[deployment guide](crate::guide::deployment#measuring-a-function) explains what
+to record.
 
 ## What you write
 
@@ -95,7 +94,7 @@ Some ways of running Rust on Lambda add a second runtime inside the function:
 - a proxy or "backend for frontend" function in front of the real one, which doubles the invocations, the cold starts and the bill;
 - a generic router that serves many operations from one function, so every operation pays for the dependencies and the permissions of all the others.
 
-`davidrs` adds structure at compile time and nothing at run time. There is one process, the official runtime, and your handler. One function serves one operation, with exactly the features, dependencies and IAM permissions that operation needs — which is why its deployment package stays small and its cold start short.
+`davidrs` runs the pipeline in the same process as the handler. There is one process, the official runtime, and your handler. One function serves one operation, with exactly the features, dependencies and IAM permissions that operation needs — which is why its deployment package stays small and its cold start short.
 
 ## Principles
 
@@ -112,7 +111,7 @@ Some ways of running Rust on Lambda add a second runtime inside the function:
 | The official crates provide | Cargo Lambda provides | `davidrs` adds |
 | --- | --- | --- |
 | The Runtime API loop and payload deserialization (`lambda_runtime`) | A local emulator of the Runtime API and of Function URLs (`watch`, `invoke`) | One enforced, monotonic deadline per invocation |
-| API Gateway, Function URL, ALB, WebSocket and VPC Lattice events as `http` requests (`lambda_http`) | Cross-compilation with Zig, release defaults and zip output (`build`) | Ordered HTTP pipelines with one error renderer and 5xx messages that cannot leak |
+| API Gateway, Function URL, ALB, WebSocket and VPC Lattice events as `http` requests (`lambda_http`) | Cross-compilation with Zig, release defaults and zip output (`build`) | Ordered HTTP pipelines with one error renderer and fixed public 5xx messages |
 | Typed payloads for S3, SNS, Kinesis and DynamoDB streams, Cognito and more (`aws_lambda_events`) | Quick manual deploys (`deploy`) | Bounded bodies, reads and retries; honest SQS, EventBridge and DynamoDB partial outcomes; access control, rate limits, MCP servers, X-Ray export |
 
 **Where the official crates go further.** Use them directly, next to `davidrs`, when a function needs:

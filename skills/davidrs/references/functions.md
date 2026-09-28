@@ -365,7 +365,7 @@ cargo lambda build --release --arm64 --package orders-get
 
 ## The release profile
 
-The profile above makes the smallest binaries: a function that only answers HTTP ships as a zip of about 0.5–0.75 MB, an SQS consumer with `queue` and `logs` as about 0.5 MB, and the first AWS SDK client adds about 1.4 MB. Cargo Lambda adds `strip`, `lto`, `codegen-units` and `panic` itself when the profile leaves them out. A profile in a member manifest is ignored. With `panic = "abort"`, a panic ends the sandbox and the next invocation starts cold: return a `Failure` or a `RuntimeError` instead.
+The profile above favors binary size. Measure the resulting artifact and startup latency for the actual function, target and dependency versions; this repository does not publish a reproducible size or cold-start benchmark. A profile in a member manifest is ignored. With `panic = "abort"`, a panic ends the sandbox and the next invocation starts cold: return a `Failure` or a `RuntimeError` instead.
 
 ## Run locally
 

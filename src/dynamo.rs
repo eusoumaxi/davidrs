@@ -349,6 +349,13 @@ where
 {
     let mut items: Vec<Item> = Vec::new();
     let mut start: Option<Item> = None;
+    if limits.max_items == 0 {
+        return Ok(Page {
+            items,
+            next: None,
+            stopped_by: Some(Stop::Items),
+        });
+    }
     for page in 0..limits.max_pages {
         if deadline.is_expired() {
             return Ok(Page {
@@ -358,7 +365,16 @@ where
             });
         }
         let remaining = limits.max_items.saturating_sub(items.len());
-        let response = fetch(start.take(), page, remaining).await?;
+        let response = match deadline.run(fetch(start.clone(), page, remaining)).await {
+            Ok(response) => response?,
+            Err(_) => {
+                return Ok(Page {
+                    items,
+                    next: start,
+                    stopped_by: Some(Stop::Deadline),
+                });
+            }
+        };
         items.extend(response.items);
         start = response.next;
         if start.is_none() && items.len() <= limits.max_items {
@@ -390,7 +406,8 @@ where
 /// keeps full control of the table, index, key condition and projection. Each
 /// request's `Limit` is lowered to the number of items still wanted, so the
 /// item cap never cuts a page short and [`Page::next`] resumes exactly after
-/// the last item returned. The deadline is checked before every request.
+/// the last item returned. The deadline bounds each request in flight; a
+/// timed-out page is not consumed. A zero item cap sends no request.
 ///
 /// # Errors
 ///
@@ -491,12 +508,13 @@ impl BatchWriteOutcome {
 /// sends them again first, after a doubling pause, and reports whatever is
 /// still unwritten instead of reporting success. `max_attempts` bounds the
 /// round trips of the whole call, not of each batch: writing 60 requests takes
-/// at least three. The deadline is checked before every request.
+/// at least three. The deadline bounds every request, including retries.
 ///
 /// # Errors
 ///
-/// Returns [`RuntimeError`] when a request fails outright. Requests already
-/// accepted stay written.
+/// Returns [`RuntimeError`] when a request fails or times out in flight.
+/// Accepted writes stay written; a timed-out write may also have completed
+/// remotely. Do not treat that error as proof that nothing was written.
 pub async fn batch_write(
     client: &Client,
     table: &str,
@@ -521,12 +539,15 @@ pub async fn batch_write(
             .drain(..pending.len().min(MAX_BATCH_WRITE_REQUESTS))
             .collect();
         let sent = chunk.len();
-        let response = client
-            .batch_write_item()
-            .request_items(table, chunk)
-            .send()
-            .instrument(span("BatchWriteItem", table))
-            .await
+        let response = deadline
+            .run(
+                client
+                    .batch_write_item()
+                    .request_items(table, chunk)
+                    .send()
+                    .instrument(span("BatchWriteItem", table)),
+            )
+            .await?
             .map_err(|error| RuntimeError::other(format!("batch write to {table}"), error))?;
         let returned = response
             .unprocessed_items
@@ -570,8 +591,8 @@ impl BatchGetOutcome {
 /// the service left unprocessed.
 ///
 /// Each batch gets up to `max_attempts` requests, with a doubling pause
-/// between them; the deadline is checked before every request. When a batch
-/// runs out of attempts or time, its keys and every later batch's keys are
+/// between them; the deadline bounds every in-flight request. When a batch
+/// runs out of attempts or time between requests, its keys and every later batch's keys are
 /// reported in [`BatchGetOutcome::unprocessed`]. `configure` sets anything else on
 /// each batch, such as a projection or consistent reads.
 ///
@@ -579,7 +600,7 @@ impl BatchGetOutcome {
 ///
 /// # Errors
 ///
-/// Returns [`RuntimeError`] when a request fails outright, or when
+/// Returns [`RuntimeError`] when a request fails or times out in flight, or when
 /// `configure` leaves the batch without keys.
 pub async fn batch_get<F>(
     client: &Client,
@@ -610,12 +631,15 @@ where
             let request = configure(KeysAndAttributes::builder().set_keys(Some(pending)))
                 .build()
                 .map_err(|error| RuntimeError::other("building a batch read", error))?;
-            let mut response = client
-                .batch_get_item()
-                .request_items(table, request)
-                .send()
-                .instrument(span("BatchGetItem", table))
-                .await
+            let mut response = deadline
+                .run(
+                    client
+                        .batch_get_item()
+                        .request_items(table, request)
+                        .send()
+                        .instrument(span("BatchGetItem", table)),
+                )
+                .await?
                 .map_err(|error| RuntimeError::other(format!("batch read from {table}"), error))?;
             read.items.extend(
                 response

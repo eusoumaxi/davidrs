@@ -25,7 +25,7 @@ The protocol is small, but a server that gets it slightly wrong fails in ways a 
 
 ## One Lambda, running in minutes
 
-An MCP server does not need a platform of its own. One Rust function behind a URL is a complete server: it answers `tools/list` and `tools/call` in microseconds of its own time, starts cold in about a tenth of a second, costs nothing while idle, and deploys with the rest of your API.
+An MCP server does not need a platform of its own. One Rust function behind a URL handles `tools/list` and `tools/call` and deploys with the rest of your API. Measure latency and operating costs for the deployment you choose.
 
 ### Why a function rather than a managed gateway
 
@@ -473,7 +473,7 @@ Not every client runs OAuth, but most accept a fixed header in their configurati
 
 ### Tokens that cross services
 
-With [`forward_caller_token`](crate::mcp::openapi::OpenApi::forward_caller_token), OpenAPI tools send the caller's token to your API unchanged; without it they send none. The MCP specification forbids a server to pass a token it received through to an upstream API: a token names its audience, and an API that accepts tokens issued for someone else can be driven by anyone holding one (the confused deputy). Forwarding is meant for one arrangement only: the MCP server is a thin front door to your own API — same owner, same authorization server — and the API accepts tokens issued for the MCP server's resource URI, for example by listing it among its audiences. The token then never leaves the system it was issued for. Never forward to someone else's API, or to an API that should not trust tokens issued for the MCP server.
+With [`forward_caller_token`](crate::mcp::openapi::OpenApi::forward_caller_token), OpenAPI tools send the caller's token to your API unchanged; without it they send none. The [MCP security guidance](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices#token-passthrough) forbids accepting tokens issued for other resources and passing them through to downstream APIs. Validate that the token was issued for this MCP server before any forwarding. Forwarding is meant for one arrangement only: the MCP server is a thin front door to your own API — same owner, same authorization server — and the API accepts tokens issued for the MCP server's resource URI, for example by listing it among its audiences. The token then never leaves the system it was issued for. Never forward to someone else's API, or to an API that should not trust tokens issued for the MCP server.
 
 When the API is a separate resource, leave forwarding off and either give the tools the server's own credential with [`header`](crate::mcp::openapi::OpenApi::header), or write the tools by hand and call it with the tool's own credential (a client-credentials token or a service key) plus the user's identity as data the API trusts from that client alone, or exchange the caller's token for one issued for the API (OAuth token exchange, RFC 8693) where your authorization server supports it.
 

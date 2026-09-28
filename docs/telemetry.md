@@ -126,7 +126,7 @@ span.in_scope(|| tracing::info!("loading the order"));
 
 **What it is.** [`Metrics`](crate::telemetry::Metrics) builds one Embedded Metric Format document: a namespace, one dimension set, metrics with a [`Unit`](crate::telemetry::Unit), and searchable properties. Printed as one log line, CloudWatch Logs turns it into metrics.
 
-**Why it exists.** Calling `PutMetricData` puts a network round trip on the request path; a log line costs nothing extra. But CloudWatch rejects a document with more than 100 metrics ([`MAX_METRICS`](crate::telemetry::metrics::MAX_METRICS)) or more than 30 dimensions in a set ([`MAX_DIMENSIONS`](crate::telemetry::metrics::MAX_DIMENSIONS)), and a rejected document loses every metric in it without an error anywhere. `Metrics` ignores a new metric or dimension past those limits instead, so the rest still arrive, and recording a name again updates its value rather than declaring it twice.
+**Why it exists.** Calling `PutMetricData` puts a network round trip on the request path; EMF writes metrics through logs instead, with CloudWatch ingestion and custom-metric charges. But CloudWatch rejects a document with more than 100 metrics ([`MAX_METRICS`](crate::telemetry::metrics::MAX_METRICS)) or more than 30 dimensions in a set ([`MAX_DIMENSIONS`](crate::telemetry::metrics::MAX_DIMENSIONS)), and a rejected document loses every metric in it without an error anywhere. `Metrics` ignores a new metric or dimension past those limits instead, so the rest still arrive, and recording a name again updates its value rather than declaring it twice.
 
 **How to use it.**
 
@@ -153,7 +153,7 @@ Print the line with `println!`, not through a log subscriber that prefixes it: C
 - Counting business events, such as orders accepted or payments declined, by dimension.
 - Attaching a request id as a property, so a metric spike leads back to the log line.
 
-**What it does not do.** One document has one dimension set, the units offered are `Count`, `Milliseconds`, `Bytes`, `Percent` and `None`, and there is no aggregation, buffering or high-resolution storage: each call is one document. A value that is not finite is written as `null`, which CloudWatch does not accept as a metric value.
+**What it does not do.** One document has one dimension set, the units offered are `Count`, `Milliseconds`, `Bytes`, `Percent` and `None`, and there is no aggregation, buffering or high-resolution storage: each call is one document. `to_json` rejects non-finite metrics, the reserved `_aws` name and names shared by dimensions, metrics or properties, so a field cannot overwrite the EMF metadata.
 
 ## X-Ray traces
 
@@ -166,7 +166,7 @@ Print the line with `println!`, not through a log subscriber that prefixes it: C
 
 The pipelines call `join_trace` and `record_status` themselves.
 
-**Why it exists.** A span exported over HTTPS costs a network round trip on the request path, or a batch that must be flushed before the response, because Lambda freezes the sandbox as soon as the invocation returns, and a background exporter only runs again at the next invocation, if one comes. The agent sits inside the sandbox and forwards traces outside the invocation, so a local datagram costs microseconds: no connection, no TLS, nothing to flush. This is the transport the AWS Distro for OpenTelemetry Lambda layers use: a JSON header line, `T1S`, then base64 of an OTLP `ExportTraceServiceRequest`. Trace ids start with a timestamp, as X-Ray requires.
+**Why it exists.** A span exported over HTTPS costs a network round trip on the request path, or a batch that must be flushed before the response, because Lambda freezes the sandbox as soon as the invocation returns, and a background exporter only runs again at the next invocation, if one comes. The agent sits inside the sandbox and forwards traces outside the invocation, so the function sends a local datagram without an HTTPS connection or an exporter batch to flush. UDP is best effort and does not confirm delivery to X-Ray. This is the transport the AWS Distro for OpenTelemetry Lambda layers use: a JSON header line, `T1S`, then base64 of an OTLP `ExportTraceServiceRequest`. Trace ids start with a timestamp, as X-Ray requires.
 
 **How to use it.** Enable `otel` and call [`telemetry::init`](crate::telemetry::init); nothing else is needed. To combine traces with a subscriber of your own, build the provider directly. Here a local socket plays the agent:
 

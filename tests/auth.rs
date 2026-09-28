@@ -68,6 +68,7 @@ fn a_new_config_allows_a_minute_of_leeway_and_one_refresh_a_minute() {
     assert!(config.required_claims.is_empty());
     assert_eq!(config.leeway, Duration::from_secs(60));
     assert_eq!(config.min_refresh_interval, Duration::from_secs(60));
+    assert_eq!(config.cache_ttl, Duration::from_secs(3600));
 }
 
 #[test]
@@ -179,15 +180,129 @@ async fn keys_that_are_not_rsa_are_ignored_next_to_rsa_ones() {
 }
 
 #[tokio::test]
-async fn a_key_without_kty_is_used_as_rsa() {
+async fn a_key_without_kty_is_not_a_usable_jwk() {
     let mut key = jwk("k1");
     key.as_object_mut().expect("object").remove("kty");
-    let jwks = Jwks::serving(vec![key]).await;
-    jwks.verifier()
+    let error = load_error(200, "application/json", jwk_document(&[key])).await;
+    assert!(error.to_string().contains("no usable RSA keys"));
+}
+
+#[tokio::test]
+async fn keys_must_allow_rs256_signature_verification() {
+    let mut keys = vec![jwk("allowed")];
+    keys[0]["alg"] = json!("RS256");
+    keys[0]["use"] = json!("sig");
+    keys[0]["key_ops"] = json!(["verify"]);
+    for (kid, field, value) in [
+        ("encryption", "use", json!("enc")),
+        ("another-algorithm", "alg", json!("RS512")),
+        ("signing-only", "key_ops", json!(["sign"])),
+        ("no-operations", "key_ops", json!([])),
+    ] {
+        let mut key = jwk(kid);
+        key[field] = value;
+        keys.push(key);
+    }
+    let jwks = Jwks::serving(keys).await;
+    let verifier = jwks.verifier().await;
+    verifier
+        .verify(&valid("allowed"))
         .await
-        .verify(&valid("k1"))
+        .expect("usable key");
+    for kid in [
+        "encryption",
+        "another-algorithm",
+        "signing-only",
+        "no-operations",
+    ] {
+        assert_eq!(
+            refused(&verifier, &valid(kid)).await,
+            VerifyError::UnknownKey
+        );
+    }
+}
+
+#[tokio::test]
+async fn unsupported_critical_headers_and_unencoded_payloads_are_refused() {
+    let jwks = Jwks::serving(vec![jwk("k1")]).await;
+    let verifier = jwks.verifier().await;
+    for extra in [
+        json!({"crit": ["custom"], "custom": true}),
+        json!({"crit": []}),
+        json!({"b64": false}),
+    ] {
+        let mut header = rs256("k1");
+        header
+            .as_object_mut()
+            .expect("header")
+            .extend(extra.as_object().expect("fields").clone());
+        assert_eq!(
+            refused(&verifier, &token(&header, &claims())).await,
+            VerifyError::Malformed
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_expired_known_key_is_refreshed_and_a_removed_key_is_refused() {
+    let jwks = Jwks::serving(vec![jwk("k1")]).await;
+    let verifier = jwks
+        .load(jwks.config().with_cache_ttl(Duration::from_millis(100)))
+        .await;
+    verifier.verify(&valid("k1")).await.expect("fresh key");
+    jwks.publish(vec![jwk("k2")]);
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_eq!(
+        refused(&verifier, &valid("k1")).await,
+        VerifyError::UnknownKey
+    );
+    verifier
+        .verify(&valid("k2"))
         .await
-        .expect("valid");
+        .expect("replacement key");
+    assert_eq!(jwks.fetches(), 2);
+}
+
+#[tokio::test]
+async fn an_expired_key_is_not_used_during_a_jwks_outage() {
+    let jwks = Jwks::serving(vec![jwk("k1")]).await;
+    let verifier = jwks
+        .load(jwks.config().with_cache_ttl(Duration::from_millis(100)))
+        .await;
+    jwks.publish(Vec::new());
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    assert_eq!(
+        refused(&verifier, &valid("k1")).await,
+        VerifyError::UnknownKey
+    );
+}
+
+#[tokio::test]
+async fn cancelled_refreshes_also_observe_the_failure_cooldown() {
+    let server = Server::start(|_| std::future::pending::<support::server::Reply>()).await;
+    let verifier = Verifier::deferred(http(), VerifierConfig::new(ISSUER, server.url("/jwks")));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), verifier.verify(&valid("k1")))
+            .await
+            .is_err()
+    );
+    assert_eq!(server.hits("/jwks"), 1);
+    assert_eq!(
+        refused(&verifier, &valid("k1")).await,
+        VerifyError::UnknownKey
+    );
+    assert_eq!(server.hits("/jwks"), 1);
+}
+
+#[tokio::test]
+async fn jwks_transport_errors_do_not_disclose_the_endpoint_url() {
+    let config = VerifierConfig::new(ISSUER, "http://127.0.0.1:1/jwks?key=private-value");
+    let error = Verifier::load(http(), config)
+        .await
+        .expect_err("unreachable");
+    let chain = davidrs::error_chain(&error);
+    assert!(!chain.contains("private-value"), "{chain}");
+    assert!(!chain.contains("127.0.0.1"), "{chain}");
 }
 
 #[tokio::test]

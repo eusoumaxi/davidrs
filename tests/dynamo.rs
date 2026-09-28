@@ -458,6 +458,122 @@ async fn a_query_past_its_deadline_reads_nothing_and_is_incomplete() {
     assert!(!page.is_complete());
 }
 
+#[tokio::test]
+async fn a_zero_item_cap_does_not_read_or_skip_an_item() {
+    let (client, log) = dynamodb(paged(5, 2));
+    let page = dynamo::query_bounded(PageLimits::new(0, 5), live(), query(&client))
+        .await
+        .expect("query");
+    assert!(calls(&log).is_empty());
+    assert!(page.items.is_empty());
+    assert_eq!(page.next, None);
+    assert_eq!(page.stopped_by, Some(Stop::Items));
+}
+
+/// A transport that stays pending exercises cancellation inside an SDK call.
+fn stalled_client() -> Client {
+    let (client, _) = dynamodb(|_, _| (200, json!({})));
+    Client::from_conf(
+        client
+            .config()
+            .to_builder()
+            .http_client(aws_smithy_http_client::test_util::NeverClient::new())
+            .build(),
+    )
+}
+
+#[tokio::test]
+async fn a_stalled_page_stops_at_the_invocation_deadline() {
+    let client = stalled_client();
+    let page = tokio::time::timeout(
+        Duration::from_secs(3),
+        dynamo::query_bounded(
+            PageLimits::new(10, 5),
+            Deadline::after(Duration::from_millis(100)),
+            query(&client),
+        ),
+    )
+    .await
+    .expect("the read must stop")
+    .expect("partial page");
+    assert_eq!(page.stopped_by, Some(Stop::Deadline));
+    assert!(page.items.is_empty());
+    assert_eq!(page.next, None);
+}
+
+#[tokio::test]
+async fn a_timeout_preserves_the_previous_page_and_its_resume_key() {
+    let (client, log) = dynamodb(|_, _| {
+        (
+            200,
+            json!({
+                "Items": wire_items(0..2), "LastEvaluatedKey": wire_key(1)
+            }),
+        )
+    });
+    let stalled = stalled_client();
+    let page = dynamo::query_bounded(
+        PageLimits::new(10, 5),
+        Deadline::after(Duration::from_millis(200)),
+        |resume| {
+            let client = if resume.is_some() { &stalled } else { &client };
+            client
+                .query()
+                .table_name("orders")
+                .set_exclusive_start_key(resume)
+        },
+    )
+    .await
+    .expect("partial page");
+    assert_eq!(calls(&log).len(), 1);
+    assert_eq!(page.items, vec![key(0), key(1)]);
+    assert_eq!(page.next, Some(key(1)));
+    assert_eq!(page.stopped_by, Some(Stop::Deadline));
+}
+
+#[tokio::test]
+async fn a_stalled_batch_write_reports_an_unknown_write_outcome_as_an_error() {
+    let client = stalled_client();
+    let result = tokio::time::timeout(
+        Duration::from_secs(3),
+        dynamo::batch_write(
+            &client,
+            "orders",
+            vec![put(1)],
+            3,
+            Deadline::after(Duration::from_millis(100)),
+        ),
+    )
+    .await
+    .expect("the write must stop");
+    assert!(matches!(
+        result,
+        Err(davidrs::RuntimeError::DeadlineExceeded { .. })
+    ));
+}
+
+#[tokio::test]
+async fn a_stalled_batch_get_stops_at_the_invocation_deadline() {
+    let client = stalled_client();
+    let result = tokio::time::timeout(
+        Duration::from_secs(3),
+        dynamo::batch_get(
+            &client,
+            "orders",
+            vec![key(1)],
+            3,
+            Deadline::after(Duration::from_millis(100)),
+            |builder| builder,
+        ),
+    )
+    .await
+    .expect("the read must stop");
+    assert!(matches!(
+        result,
+        Err(davidrs::RuntimeError::DeadlineExceeded { .. })
+    ));
+}
+
 /// The first page blocks until the deadline has passed, so the read stops
 /// before the second page with the key to resume from.
 #[tokio::test]

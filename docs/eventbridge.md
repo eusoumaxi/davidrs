@@ -74,7 +74,7 @@ async fn publish_lines(
 
 ## Use cases
 
-- Announcing a state change after it is stored, and failing the invocation when the announcement was rejected, so a retry publishes it again.
+- Announcing a stored state change, with an idempotent write and publication on retries. Use a transactional outbox when the write and the pending event must be recorded atomically; a returned error alone cannot make two services atomic.
 - An outbox relay that publishes pending events in chunks of ten and keeps the ones that were not accepted.
 - Recording the event id EventBridge assigned, to correlate a publication with what its consumers received.
 

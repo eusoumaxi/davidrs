@@ -38,9 +38,9 @@ With no features at all, the crate is its value types — [`RuntimeError`](crate
 
 ## Deliberate absences
 
-- **No `regex`.** Several popular crates pull it in (about 240 KB in a release binary). `logs` reads a bare level from `RUST_LOG` instead of an `env-filter` expression, and `validate` enables only Garde's derive.
+- **No `regex`.** Several logging and validation configurations enable it. `logs` reads a bare level from `RUST_LOG` instead of an `env-filter` expression, and `validate` enables only Garde's derive.
 - **No `aws-config`.** The default credential chain's profile, SSO, IMDS and STS providers never run inside Lambda; `aws` reads the environment Lambda injects.
-- **No certificate-store parsing at startup.** Both the SDK client (`aws`) and `client` use compiled-in or caller-supplied roots, which keeps tens of milliseconds off every cold start.
+- **Explicit certificate trust.** `client` uses compiled-in Mozilla roots. For AWS clients, `Trust::NativeRoots` uses the system store and `Trust::Pem` uses your supplied bundle.
 
 ## Checking a function's features
 

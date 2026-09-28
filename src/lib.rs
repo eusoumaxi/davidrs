@@ -3,25 +3,24 @@
 //!
 //! `davidrs` is a thin layer over the official runtime crates: it keeps
 //! [`lambda_runtime`]/[`lambda_http`] and the AWS SDK as the transport, adds
-//! nothing at run time but a microsecond of pipeline per request, and owns
-//! what every function otherwise rewrites — and usually gets subtly wrong —
-//! around them:
+//! an ordered pipeline in the same process as your handler, and owns the
+//! surrounding invocation logic:
 //!
 //! - **One absolute deadline per invocation.** [`Deadline`] is a monotonic
 //!   instant; child budgets cannot outlive their parent, and every adapter
 //!   keeps a cleanup margin before Lambda's own timeout.
 //! - **One ordered pipeline per trigger.** HTTP requests ([`http::Api`]
-//!   buffered, [`http::stream::StreamApi`] streamed) run admission, decoding,
-//!   authorization and the handler in a fixed order, and every failure
-//!   reaches one error renderer. SQS ([`queue`]), EventBridge ([`event`]),
+//!   buffered, [`http::stream::StreamApi`] streamed) run their boundary checks,
+//!   authorization and handler in order. Both render failures before the
+//!   response starts; a streamed body reports later errors through the stream. SQS ([`queue`]), EventBridge ([`event`]),
 //!   schedules ([`schedule`]) and direct invocations ([`runtime`]) decode
 //!   their payload before the handler and report its failures to Lambda.
-//! - **Failures that cannot leak.** A [`http::Failure`] carries a public
-//!   message and a separate internal detail; any 5xx renders a fixed string no
-//!   matter how it was built.
-//! - **Bounded work everywhere.** Request and response bodies, decompressed
-//!   payloads, paginated reads, retries and stream producers all have explicit
-//!   limits and report when they hit them.
+//! - **Safe error rendering.** A [`http::Failure`] carries a public message
+//!   and a separate internal detail; the built-in renderers use a fixed
+//!   string for every 5xx.
+//! - **Explicit limits.** Buffered requests, bounded upstream readers,
+//!   decompressed payloads, paginated reads, retries and stream producers
+//!   have limits and report when they hit them.
 //! - **Honest partial outcomes.** SQS batches report failures per record,
 //!   `PutEvents` and `BatchWriteItem` per entry, a bounded read says whether it
 //!   is complete.

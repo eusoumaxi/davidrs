@@ -38,6 +38,8 @@ pub enum VerifyError {
 pub(crate) struct Header {
     pub(crate) alg: String,
     pub(crate) kid: Option<String>,
+    crit: Option<Value>,
+    b64: Option<bool>,
 }
 
 pub(crate) const B64: base64::engine::general_purpose::GeneralPurpose =
@@ -67,7 +69,7 @@ pub(crate) fn split(token: &str) -> Result<(&str, &str, &str), VerifyError> {
 pub(crate) fn header(encoded: &str) -> Result<Header, VerifyError> {
     let bytes = B64.decode(encoded).map_err(|_| VerifyError::Malformed)?;
     let header: Header = serde_json::from_slice(&bytes).map_err(|_| VerifyError::Malformed)?;
-    if header.alg != "RS256" {
+    if header.alg != "RS256" || header.crit.is_some() || header.b64 == Some(false) {
         return Err(VerifyError::Malformed);
     }
     Ok(header)

@@ -88,8 +88,7 @@ impl Metrics {
     /// unit stays the first one given), so a name is never declared twice. A
     /// new metric past [`MAX_METRICS`] is ignored.
     ///
-    /// A value that is not finite is written as `null`, which is not a valid
-    /// metric value.
+    /// A value that is not finite is rejected by [`to_json`](Self::to_json).
     #[must_use]
     pub fn metric(mut self, name: impl Into<String>, value: f64, unit: Unit) -> Self {
         let name = name.into();
@@ -126,9 +125,25 @@ impl Metrics {
     ///
     /// # Errors
     ///
-    /// Returns [`RuntimeError`](crate::RuntimeError) when the document cannot
-    /// be serialized.
+    /// Returns [`RuntimeError`](crate::RuntimeError) for non-finite metric
+    /// values, names shared by dimensions, metrics or properties, the
+    /// reserved `_aws` name, or a serialization failure.
     pub fn to_json(&self, at: SystemTime) -> Result<String, crate::RuntimeError> {
+        if self.values.values().any(|value| !value.is_finite()) {
+            return Err(crate::RuntimeError::message("metric values must be finite"));
+        }
+        if self.dimensions.keys().any(|name| {
+            name == "_aws" || self.values.contains_key(name) || self.properties.contains_key(name)
+        }) || self
+            .values
+            .keys()
+            .any(|name| name == "_aws" || self.properties.contains_key(name))
+            || self.properties.contains_key("_aws")
+        {
+            return Err(crate::RuntimeError::message(
+                "metric, dimension and property names must be distinct and cannot be _aws",
+            ));
+        }
         let timestamp = at.duration_since(UNIX_EPOCH).unwrap_or_default();
         let mut root = serde_json::Map::new();
         root.insert(

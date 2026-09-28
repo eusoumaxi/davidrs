@@ -26,8 +26,8 @@ use crate::{RuntimeError, required_env};
 pub enum Trust<'a> {
     /// The operating system's certificate store.
     ///
-    /// Correct everywhere, and measurably slower to start: the store is read
-    /// and parsed when the client first connects.
+    /// The store is read and parsed when the client first connects. Use this
+    /// when the runtime provides a maintained certificate store.
     NativeRoots,
     /// Exactly the roots in this PEM bundle.
     ///

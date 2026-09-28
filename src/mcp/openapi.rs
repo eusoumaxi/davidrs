@@ -32,8 +32,8 @@
 //!   percent-encoded and query values encoded as `name=value` pairs. A call
 //!   therefore always reaches the base URL's own host; a document whose path
 //!   does not start with `/` is refused when the document is read.
-//! - **Hints**: `GET`, `HEAD`, `OPTIONS` and `TRACE` are read-only, `DELETE`
-//!   is destructive, and the idempotent methods say so.
+//! - **Hints**: `GET`, `HEAD`, `OPTIONS` and `TRACE` are read-only; other
+//!   methods may be destructive, and the idempotent methods say so.
 //!
 //! # Examples
 //!
@@ -446,7 +446,7 @@ fn derive(
         "inputSchema": input,
         "annotations": {
             "readOnlyHint": read_only,
-            "destructiveHint": *method == Method::DELETE,
+            "destructiveHint": !read_only,
             "idempotentHint": read_only || matches!(*method, Method::PUT | Method::DELETE),
         },
     });
@@ -587,10 +587,8 @@ async fn forward(
         };
         match parameter.location {
             Location::Path => {
-                path = path.replace(
-                    &format!("{{{}}}", parameter.name),
-                    &encode(&items.join(",")),
-                );
+                let value = items.join(",");
+                path = path.replace(&format!("{{{}}}", parameter.name), &encode(&value));
             }
             Location::Query => query.extend(
                 items
@@ -609,6 +607,11 @@ async fn forward(
                 headers.push((name, value));
             }
         }
+    }
+    if path.split('/').any(|segment| matches!(segment, "." | "..")) {
+        return Err(invalid(
+            "Path arguments cannot form a dot path segment".to_owned(),
+        ));
     }
     let mut url = format!("{}{path}", upstream.base_url.trim_end_matches('/'));
     if !query.is_empty() {

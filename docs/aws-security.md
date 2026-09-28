@@ -18,7 +18,7 @@ The table **Who does what** says, for each concern, what AWS does, what `davidrs
 
 A control that runs in the platform is better than the same control in the function, for three reasons:
 
-- **Rejected traffic costs nothing.** A request the gateway or the firewall refuses is never an invocation: no cold start, no execution time, no log line, no pressure on the function's concurrency or on the stores behind it. A flood that reaches the function is already a bill.
+- **Rejected traffic avoids handler execution.** Gateway and WAF rejections keep work away from the protected Lambda and its data stores. Gateway requests, WAF inspection, logs and custom Lambda authorizers can still incur charges; filtering does not make unwanted traffic free.
 - **The controls are managed and audited.** Token signatures, throttling counters, IP reputation lists and bot signatures are maintained by AWS, configured as infrastructure, visible in CloudTrail and CloudWatch, and reviewed by whoever reviews the account, not only by whoever reviews the code.
 - **They apply before anything is parsed.** A firewall rule inspects bytes; an authorizer inspects a header. Neither needs the function's decoder, so a malformed body, an oversized request or a forged token is refused without running the code that would have to handle it.
 
@@ -88,7 +88,7 @@ A Function URL is a dedicated HTTPS endpoint on the function itself, `https://<u
 
 **Limits.** 6 MB per request and buffered response, 1 MB for the request line and headers together, and the function's own timeout, at most 15 minutes: nothing shorter sits in the path unless CloudFront does.
 
-**What a Function URL lacks.** No authorizers, no web ACL, no throttling, no usage plans, no request validation, no access logs of its own. The only brake is reserved concurrency: a function admits at most ten requests per second per unit of reserved concurrency and answers `429` beyond that ([Throttling function URLs](https://docs.aws.amazon.com/lambda/latest/dg/urls-configuration.html)). Reserved concurrency is therefore a hard cap on the bill, not a rate limit per caller.
+**What a Function URL lacks.** No authorizers, no web ACL, no throttling, no usage plans, no request validation, no access logs of its own. The only brake is reserved concurrency: a function admits at most ten requests per second per unit of reserved concurrency and answers `429` beyond that ([Throttling function URLs](https://docs.aws.amazon.com/lambda/latest/dg/urls-configuration.html)). Reserved concurrency bounds concurrent execution and request throughput, not total spending or each caller's share. Account for request, logging and front-door charges separately.
 
 **How to protect one.** Put CloudFront in front, and make the URL unreachable except through it:
 
@@ -96,7 +96,7 @@ A Function URL is a dedicated HTTPS endpoint on the function itself, `https://<u
 2. **`POST` and `PUT` through OAC need the body's hash.** Lambda refuses unsigned payloads, so the viewer must send `x-amz-content-sha256` with the SHA-256 of the body; a browser client computes it before the request, and a route that lists that header in [`Cors::allow_headers`](crate::http::stream::Cors::allow_headers) lets the preflight through. Clients that cannot add the header, such as MCP clients and third-party webhook senders, cannot use OAC: the URL then stays `NONE` and the function is the gate.
 3. **OAC signs in `Authorization`.** The `no-override` signing option forwards a viewer's `Authorization` header, but Lambda then validates it as a SigV4 signature for the URL's host, so a bearer token cannot be carried there. Have a CloudFront Function copy the token into another header on the viewer request, and restore it with [`StreamApi::prepare`](crate::http::stream::StreamApi::prepare) or a decoder before the policy reads it.
 4. Attach a web ACL to the distribution, cache nothing on the API behaviour, and forward the headers the function reads with an origin request policy such as the managed `AllViewerExceptHostHeader` ([managed origin request policies](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/using-managed-origin-request-policies.html)).
-5. Set reserved concurrency to the most instances the operation should ever run, and CloudFront's origin response timeout to what a response really needs: 30 s by default, 1 to 120 s per origin ([`OriginReadTimeout`](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudfront-distribution-customoriginconfig.html)); a streamed response that runs longer is cut by CloudFront, not by Lambda.
+5. Set reserved concurrency to the most instances the operation should ever run, and CloudFront's origin response timeout to what a response really needs: 30 s by default, 1 to 120 s per origin ([`OriginReadTimeout`](https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-cloudfront-distribution-customoriginconfig.html)). This timeout limits the wait for the first packet and between later packets, not the total stream duration. A configured [response completion timeout](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html#response-completion-timeout) separately bounds the whole response.
 
 Behind CloudFront, the request's `sourceIp` is CloudFront's. Rate-limit on the viewer's address instead, which CloudFront writes in `CloudFront-Viewer-Address` as `ip:port` when the origin request policy forwards it ([CloudFront request headers](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/adding-cloudfront-headers.html)). A viewer cannot set that header on a URL that is only reachable through OAC; on a URL that is still reachable directly, it can, which is one more reason to close the direct path.
 
@@ -305,7 +305,7 @@ Rules:
 
 **Body inspection.** WAF inspects the first 16 KB of a request body on CloudFront, API Gateway, Cognito, App Runner and Verified Access resources, raisable to 32, 48 or 64 KB for a fee, and 8 KB, fixed, on an Application Load Balancer or AppSync; headers and cookies are inspected up to 8 KB or 200 entries. The rest still reaches the origin, and each rule that inspects the body says what to do with an oversized one ([body inspection](https://docs.aws.amazon.com/waf/latest/developerguide/web-acl-setting-body-inspection-limit.html), [oversize components](https://docs.aws.amazon.com/waf/latest/developerguide/waf-oversize-request-components.html)). A WAF limit is therefore not a body limit for the function: set [`Api::body_limit`](crate::http::Api::body_limit) to what the route needs.
 
-**Cost.** At the time of writing, a web ACL costs $5 per month, each rule or managed rule group $1 per month, and requests $0.60 per million, with extra fees for Bot Control, the fraud control groups, Anti-DDoS, capacity beyond 1,500 WCUs and body inspection beyond 16 KB ([AWS WAF pricing](https://aws.amazon.com/waf/pricing/)). For an API that handles a few million requests a month, the baseline is tens of dollars; the managed groups with per-request analysis are what to size deliberately.
+**Cost.** Budget for the web ACL, its rules, inspected requests and any paid managed-rule features. Capacity and body inspection settings can add charges. Use the current [AWS WAF pricing](https://aws.amazon.com/waf/pricing/) for the deployment's Region and request volume; this guide does not pin prices.
 
 ## Amazon Cognito
 
@@ -335,9 +335,9 @@ Each one names the recommended AWS setup and exactly which `davidrs` features to
 # fn build(client: aws_sdk_dynamodb::Client) {
 use std::time::Duration;
 
-use davidrs::http::access::Claims;
+use davidrs::http::access::{Access, Claims};
 use davidrs::http::rate_limit::DynamoWindow;
-use davidrs::http::{Api, PlainErrors, Public, RateLimitConfig, RateLimited, Request};
+use davidrs::http::{Api, PlainErrors, RateLimitConfig, RateLimited, Request};
 
 /// The subject the authorizer verified, or one shared bucket for anything
 /// else. Admission runs before the policy, so it reads the claims the
@@ -350,13 +350,14 @@ fn verified_subject(request: &Request<'_>) -> String {
 
 /// 1,000 exports per user per day: a quota no firewall can count.
 let quota = RateLimitConfig::new("exports", 1_000, Duration::from_secs(86_400));
-let api = Api::new("start-export", Public, PlainErrors)
+let policy = Access::new(|claims: &Claims| claims.subject().map(str::to_owned)).require_caller();
+let api = Api::new("start-export", policy, PlainErrors)
     .admission(RateLimited::new(DynamoWindow::new(client, "quotas"), quota).key(verified_subject));
 # let _ = api;
 # }
 ```
 
-**A partner API with API keys and usage plans.** A REST API: an API key per partner in a usage plan with a rate, a burst and a monthly quota, request validators with a model per operation, a web ACL on the stage, access logs to Firehose, mutual TLS on the custom domain when partners can hold a certificate. In the function: `apigw-rest`, and an [`Access`](crate::http::access::Access) policy whose caller is the partner named by the authorizer or by the key's context. Skip [`RateLimited`](crate::http::RateLimited) for volume: the plan counts it; keep it only for a quota the plan cannot express, such as a per-operation limit.
+**A partner API with API keys and usage plans.** A REST API: an API key per partner in a usage plan with a rate, a burst and a monthly quota, request validators with a model per operation, a web ACL on the stage, access logs to Firehose, mutual TLS on the custom domain when partners can hold a certificate. In the function: `apigw-rest`, and an [`Access`](crate::http::access::Access) policy whose caller is the partner identified by the authorizer. [API keys and usage plans](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-usage-plans.html) are for metering, not authentication; their throttles and quotas are best effort. Skip [`RateLimited`](crate::http::RateLimited) for volume: the plan counts it; keep it only for a quota the plan cannot express, such as a per-operation limit.
 
 **Webhooks from a third party.** A Function URL with auth type `NONE`, because the sender cannot sign requests or hash bodies, with reserved concurrency as the cap and CloudFront plus a web ACL in front when the sender publishes its address ranges. In the function: a small [`body_limit`](crate::http::Api::body_limit), typed decoding, and a [`Policy`](crate::http::Policy) that verifies the sender's signature over the raw body before the handler runs. The body limit is checked before the policy, so the signature is computed over at most that many bytes.
 
@@ -406,7 +407,7 @@ let api = Api::new("webhook", SenderSignature { key }, PlainErrors).body_limit(6
 
 `ring` is already linked by the `auth` feature; add it to your own manifest to name it. Read the secret with [`secrets`](crate::secrets) in `main`, make the handler idempotent on the delivery id, and answer quickly: senders retry on any error and on a timeout.
 
-**A streamed endpoint.** A Function URL in `RESPONSE_STREAM` mode behind CloudFront with origin access control, a web ACL on the distribution, an origin response timeout equal to the longest stream, reserved concurrency as the cap. In the function: [`StreamApi`](crate::http::stream::StreamApi) with [`Cors`](crate::http::stream::Cors) listing `x-amz-content-sha256` when browsers `POST`, [`StreamApi::prepare`](crate::http::stream::StreamApi::prepare) restoring the bearer header the edge function relocated, and [`Access::verify_bearer`](crate::http::access::Access::verify_bearer) with gateway claims off. A streamed route has no admission stage, so the handler calls its [`Counter`](crate::http::Counter) itself once it knows who is calling. A REST API in `STREAM` mode is the alternative when you need the gateway's authorizer more than the URL's simplicity.
+**A streamed endpoint.** A Function URL in `RESPONSE_STREAM` mode behind CloudFront with origin access control, a web ACL on the distribution, an origin response timeout longer than the expected gap between chunks and a response completion timeout sized for the whole stream, reserved concurrency as the cap. In the function: [`StreamApi`](crate::http::stream::StreamApi) with [`Cors`](crate::http::stream::Cors) listing `x-amz-content-sha256` when browsers `POST`, [`StreamApi::prepare`](crate::http::stream::StreamApi::prepare) restoring the bearer header the edge function relocated, and [`Access::verify_bearer`](crate::http::access::Access::verify_bearer) with gateway claims off. A streamed route has no admission stage, so the handler calls its [`Counter`](crate::http::Counter) itself once it knows who is calling. A REST API in `STREAM` mode is the alternative when you need the gateway's authorizer more than the URL's simplicity.
 
 **An MCP server for AI clients.** A Function URL with auth type `NONE` behind CloudFront and a web ACL, caching disabled, all viewer headers except `Host` forwarded; OAC does not fit because MCP clients cannot hash bodies. In the function: [`mcp::Server`](crate::mcp::Server) with an [`Access`](crate::http::access::Access) policy that verifies every bearer token against the pool with your server's URL as audience, a [`ProtectedResource`](crate::mcp::ProtectedResource) so a `401` tells the client where to sign in, and a [`RateLimited`](crate::http::RateLimited) admission. The [MCP chapter](crate::guide::mcp) covers the OAuth flow, and the HTTP API alternative with a JWT authorizer for clients that fit in 30 seconds.
 
@@ -421,7 +422,7 @@ let api = Api::new("webhook", SenderSignature { key }, PlainErrors).body_limit(6
 These stay on behind a perfect gateway, because each guards against something the gateway cannot see.
 
 - **Bounded decoding and body limits per route.** [`Api::body_limit`](crate::http::Api::body_limit) is checked before any decoder runs, including one that reads raw bytes; tokens, key sets, upstream answers, decompressed payloads and MCP bodies have their own bounds. The gateway's 10 MB and the firewall's 16 KB are platform numbers; the route's number is the one that reflects its purpose.
-- **`5xx` redaction.** A gateway cannot redact a body the function wrote. [`Failure::public_message`](crate::http::Failure::public_message) is the only accessor a renderer has, and it returns [`INTERNAL_MESSAGE`](crate::http::INTERNAL_MESSAGE) for every `5xx`, however the failure was built:
+- **`5xx` redaction.** A gateway cannot redact a body the function wrote. Built-in renderers use [`Failure::public_message`](crate::http::Failure::public_message), which returns [`INTERNAL_MESSAGE`](crate::http::INTERNAL_MESSAGE) for every `5xx`, however the failure was built:
 
 ```rust
 use davidrs::http::{Failure, StatusCode, INTERNAL_MESSAGE};
@@ -434,5 +435,5 @@ assert_eq!(failure.public_message(), INTERNAL_MESSAGE);
 - **Absolute deadlines.** One [`Deadline`](crate::Deadline) per invocation, with a reserve before Lambda's own timeout, so the client receives a rendered `504` instead of a cut connection, a retry never gets a fresh allowance, and a streamed producer stops even when the client keeps reading. The gateway's timeout is the outer bound; the function's deadline is the one that answers.
 - **Tenant membership.** The authorizer proves who is calling; [`Tenancy`](crate::http::access::Tenancy) proves they may act for the tenant they named, before the handler runs, and the [`Grant`](crate::http::access::Grant) type makes it impossible to forget.
 - **Business quotas.** [`RateLimited`](crate::http::RateLimited) counts exactly, under a key of the application's choosing, and tells the client its remaining budget; it fails closed when its counter is unreachable. The firewall's rate rule protects availability; this protects the plan.
-- **Least-privilege clients.** One function, one operation, one role, with exactly the actions and resources that operation uses; the SDK clients built in `main` can do nothing the role does not allow, and every feature links only what it names, so a read endpoint carries no write client.
-- **No secrets in errors.** [`secrets`](crate::secrets) errors name the secret and never its value, environment errors name the variable, outbound client errors carry no URL, and the pipelines log a failure's code and kind, never its message or detail. Whatever a log pipeline or a support engineer sees, it is not a credential.
+- **Least-privilege clients.** One function, one operation, one role, with exactly the actions and resources that operation uses; the SDK clients built in `main` can do nothing the role does not allow, and features select which service clients are linked. A DynamoDB client exposes read and write methods; IAM restricts which ones the function can execute.
+- **No secrets in errors.** [`secrets`](crate::secrets) errors name the secret and never its value, environment errors name the variable, outbound client errors carry no URL, and the pipelines log a failure's code and kind, never its message or detail. Application log fields, custom renderers and third-party error sources still require deliberate redaction.

@@ -108,7 +108,7 @@ async fn a_producer_that_ignores_cancellation_is_dropped_after_the_grace_period(
 async fn an_expired_budget_ends_the_stream_even_while_someone_reads() {
     let body = StreamBody::spawn(
         4,
-        Deadline::after(Duration::from_millis(30)),
+        Deadline::after(Duration::from_millis(200)),
         |producer| async move {
             producer.send("x").await;
             while !producer.should_stop() {
@@ -120,6 +120,19 @@ async fn an_expired_budget_ends_the_stream_even_while_someone_reads() {
         .await
         .expect("the stream ends on its own");
     assert_eq!(chunks.len(), 2);
+    assert!(matches!(
+        chunks.last(),
+        Some(Err(RuntimeError::DeadlineExceeded { .. }))
+    ));
+}
+
+#[tokio::test]
+async fn a_producer_finishing_after_its_deadline_cannot_report_a_clean_end() {
+    let deadline = Deadline::after(Duration::from_millis(100));
+    let body = StreamBody::spawn(1, deadline, |producer| async move {
+        std::thread::sleep(producer.deadline().remaining() + Duration::from_millis(5));
+    });
+    let chunks = body.collect::<Vec<_>>().await;
     assert!(matches!(
         chunks.last(),
         Some(Err(RuntimeError::DeadlineExceeded { .. }))

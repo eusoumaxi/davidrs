@@ -7,13 +7,37 @@ version may change the public API, and its entry says how.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-09-27
+
 The first public release.
 
 ### Changed
 
+- JWKS caches expire after one hour by default (`with_cache_ttl` configures
+  this); expired keys require a successful refresh. Keys must include
+  `kty: "RSA"`, and optional key usage fields must allow RS256 verification.
+- Getting-started instructions, architecture boundaries, gateway trust
+  requirements and agent guidance match the implementation. Performance
+  claims without a reproducible benchmark have been removed.
 - The guide, README and examples index now say when to read each chapter,
   what a caller or Lambda should observe when a call works, and what to
   change when it does not.
+
+### Fixed
+
+- Tenant fallbacks must pass the caller's membership check.
+- OpenAPI path arguments cannot form `.` or `..` segments; mutating
+  operations advertise potentially destructive effects to MCP clients.
+- Unsupported critical JWT extensions are rejected. Failed or cancelled
+  JWKS requests enter the refresh cooldown and redact URLs from errors.
+- DynamoDB deadlines bound in-flight reads and batches. A zero item limit
+  sends no query, and large deadline margins expire safely.
+- Stream producers completing after their deadline report a timeout even
+  when the runtime's timer has not fired yet.
+- EMF serialization rejects non-finite metrics and field-name collisions
+  that would overwrite CloudWatch metadata or invalidate the document.
+- The table example scopes reads to the authenticated caller, reports
+  incomplete pages and uses DynamoDB Local without an AWS account.
 
 ### Added
 
@@ -24,9 +48,9 @@ The first public release.
   (`streaming`).
 - One absolute invocation deadline (`Deadline`) shared by every stage, with a
   margin kept before Lambda's own timeout.
-- Failures that keep their public message and internal detail apart; every 5xx
-  renders a fixed message. `PlainErrors` and RFC 9457 `ProblemErrors`
-  renderers.
+- Failures that keep their public message and internal detail apart;
+  the built-in `PlainErrors` and RFC 9457 `ProblemErrors` renderers use
+  a fixed message for every 5xx.
 - Extension points: `Policy`, `Admission`, `ErrorRenderer`, response
   finalizers and the streamed pipeline's `prepare` hook.
 - Access control by configuration: `http::access::Access` identifies callers
@@ -65,4 +89,5 @@ The first public release.
 - Streamed responses carry `Set-Cookie` headers in the stream's cookie list.
 - Rust 2024 edition; the minimum supported Rust is 1.94.1, checked in CI.
 
-[Unreleased]: https://github.com/eusoumaxi/davidrs/commits/main
+[Unreleased]: https://github.com/eusoumaxi/davidrs/compare/v0.1.0...main
+[0.1.0]: https://github.com/eusoumaxi/davidrs/releases/tag/v0.1.0

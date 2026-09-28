@@ -163,7 +163,7 @@ assert_eq!(tight.status().as_u16(), 413);
 
 Reach for [`form`](crate::http::Request::form) when an HTML form, a webhook or an OAuth client posts `application/x-www-form-urlencoded`, for [`json_text`](crate::http::Request::json_text) when an application decoder needs the text, for [`raw_body`](crate::http::Request::raw_body) when a policy verifies an HMAC over the exact bytes, for [`query_pairs`](crate::http::Request::query_pairs) when a list arrives as `?tag=a&tag=b`, and for [`source_ip`](crate::http::Request::source_ip) as a rate-limit key. Behind an Application Load Balancer (feature `alb`), `source_ip` is the last address of `X-Forwarded-For`, the one the load balancer appends in its default `append` mode.
 
-`source_ip` ignores `X-Forwarded-For` on purpose: trusting a forwarded header needs a proxy policy of the application's own, and without one any caller could choose its own rate-limit key. The view never copies the body and never awaits; for anything it does not expose, [`Request::native`](crate::http::Request::native) returns the underlying request.
+For gateway events, `source_ip` ignores `X-Forwarded-For`: trusting a forwarded header needs a proxy policy of the application's own, and without one any caller could choose its own rate-limit key. The view never copies the body and never awaits; for anything it does not expose, [`Request::native`](crate::http::Request::native) returns the underlying request.
 
 ## Answering
 
@@ -210,7 +210,7 @@ A [`Failure`](crate::http::Failure) is what a handler returns when it cannot suc
 | kind | never | the step that failed: admission, decode, policy, handler, serialization, deadline |
 | headers | yes | `Retry-After`, `Allow`, rate-limit fields |
 
-A renderer can read the message only through [`public_message`](crate::http::Failure::public_message), which returns [`INTERNAL_MESSAGE`](crate::http::INTERNAL_MESSAGE) for every 5xx. `Display` shows the same thing, so an accidental `{failure}` in a body cannot leak either. [`internal_detail`](crate::http::Failure::internal_detail) returns the unredacted message and the detail for a log line you write on purpose; the pipeline's own log records only the operation, request id, code and kind.
+A renderer must read the client-visible message through [`public_message`](crate::http::Failure::public_message), which returns [`INTERNAL_MESSAGE`](crate::http::INTERNAL_MESSAGE) for every 5xx. `Display` shows the same thing, so an accidental `{failure}` in a body cannot leak either. [`internal_detail`](crate::http::Failure::internal_detail) returns the unredacted message and the detail for a log line you write on purpose; the pipeline's own log records only the operation, request id, code and kind.
 
 ```rust
 use davidrs::http::{Failure, FailureKind, StatusCode, INTERNAL_MESSAGE};

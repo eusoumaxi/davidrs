@@ -150,7 +150,11 @@ impl StreamBody {
                 biased;
                 () = stopped.cancelled() => false,
                 () = tokio::time::sleep(deadline.remaining()) => true,
-                () = &mut work => return Ok(()),
+                () = &mut work => return if deadline.is_expired() {
+                    Err(RuntimeError::DeadlineExceeded { elapsed: started.elapsed() })
+                } else {
+                    Ok(())
+                },
             };
             stopped.cancel();
             let _ = tokio::time::timeout(std::time::Duration::from_millis(50), &mut work).await;

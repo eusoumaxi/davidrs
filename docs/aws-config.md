@@ -2,7 +2,7 @@
 
 Enable `aws`, or enable `dynamo`, `eventbridge`, `secrets` or `queue-visibility`, which enable it for you. Call [`sdk_config`](crate::aws::sdk_config) once in `main`, before the loop, and pass the result to every `Client::new`. A missing `AWS_REGION` or access key fails that call, and the error names the variable, instead of failing the first request with a signing error.
 
-[`aws::sdk_config`](crate::aws::sdk_config) reads only what Lambda puts in the environment: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` when present, and `AWS_REGION`. It does not run the `aws-config` credential chain (profiles, SSO, IMDS, web identity). That chain never answers inside Lambda and is not compiled in. The HTTP client uses rustls, and [`Trust`](crate::aws::Trust) chooses which root certificates it accepts. `sdk_config` itself performs no network I/O.
+[`aws::sdk_config`](crate::aws::sdk_config) reads only what Lambda puts in the environment: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` when present, and `AWS_REGION`. It does not run the `aws-config` credential chain (profiles, SSO, IMDS, web identity). The environment provider normally resolves Lambda credentials first; the remaining providers are not compiled into this helper. The HTTP client uses rustls, and [`Trust`](crate::aws::Trust) chooses which root certificates it accepts. `sdk_config` itself performs no network I/O.
 
 ## Why it exists
 
@@ -30,7 +30,7 @@ Then `aws_sdk_dynamodb::Client::new(&config)`, and the same for every other serv
 
 ### Choosing the roots
 
-[`Trust::NativeRoots`](crate::aws::Trust::NativeRoots) reads the operating system's store when the client first connects. It is correct everywhere and the right default.
+[`Trust::NativeRoots`](crate::aws::Trust::NativeRoots) reads the operating system's store when the client first connects. Use it when the runtime provides a maintained certificate store.
 
 [`Trust::Pem`](crate::aws::Trust::Pem) trusts only the certificates in a PEM bundle, usually compiled in with `include_bytes!`. Most AWS endpoints chain to the Amazon Trust Services roots, so those are the roots to start from. The trade is explicit: if an endpoint ever chains to a root outside the bundle, its calls fail until the bundle is updated and redeployed. The bundle is only parsed when the client first connects, and a bundle with no valid certificate makes the SDK panic there, so make one real call after changing it.
 
@@ -62,7 +62,7 @@ To point a client at a local endpoint, such as DynamoDB Local, override it on th
 
 | What you see | What it usually means | What to change |
 | --- | --- | --- |
-| `main` fails and the error names `AWS_REGION`, `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` | The variable Lambda normally injects is missing | Set it on the function. Locally, export credentials with `aws configure export-credentials --format env` and set `AWS_REGION`. |
-| It works on your laptop through a profile, and fails in Lambda with no credentials | The code used `aws-config`'s default chain | Use [`sdk_config`](crate::aws::sdk_config). Profiles, SSO and IMDS are not compiled in. |
+| `main` fails and the error names `AWS_REGION`, `AWS_ACCESS_KEY_ID` or `AWS_SECRET_ACCESS_KEY` | The variable Lambda normally injects is missing | Lambda supplies these reserved variables; check the runtime and execution role rather than setting access keys on the function. For local tests use dummy credentials and a local endpoint. For an intentional AWS call, export temporary credentials with `aws configure export-credentials --format env` and set `AWS_REGION`. |
+| It works on your laptop through a profile, and fails in Lambda with no credentials | The deployed runtime or credential source differs from the local profile | Standard Lambda supplies execution-role credentials in its environment. Confirm the runtime and execution role. `sdk_config` intentionally supports only that environment; use the native SDK configuration for other credential sources. |
 | The first call to an AWS endpoint fails TLS after you switched to [`Trust::Pem`](crate::aws::Trust::Pem) | The bundle does not contain the root that endpoint chains to | Start from the Amazon Trust Services roots. A bundle with no valid certificate panics on first connect, so make one real call after changing it. |
 | Calls go to AWS in a test that should stay on your machine | The client was built with `sdk_config` and no endpoint override | Point the service configuration at `http://localhost:8000`, or build the test client with the SDK's in-process HTTP client and do not call `sdk_config`. |

@@ -65,7 +65,7 @@ scripts/check.sh coverage     # line coverage, with a floor
 | `test` | every test and doctest with all features |
 | `features` | each feature alone compiles cleanly and passes its tests, so no feature silently depends on another |
 | `msrv` | everything compiles with the oldest supported Rust, `rust-version` in `Cargo.toml` |
-| `docs` | the API reference and this guide build with no warnings, and every link resolves |
+| `docs` | the API reference and guide build without warnings, including intra-doc link validation; external URLs are not fetched |
 | `package` | the crate packages and builds from its own files |
 | `spelling` | code, comments and documentation have no known misspellings (`typos`) |
 | `workflows` | the GitHub Actions workflows and the shell scripts pass `actionlint` and `shellcheck` |
@@ -78,4 +78,4 @@ The tests themselves follow a few rules, listed in `CONTRIBUTING.md`:
 - **The real loop, end to end.** `tests/lambda_loop.rs` runs every `run` entry point against a local imitation of the Lambda Runtime API, including the metadata prelude of a streamed response.
 - **Offline and deterministic.** Remote ends are a local HTTP server (`tests/support/server.rs`) or the SDK's in-process client; no test needs the network or an AWS account.
 - **Checked against the specification.** Wire formats are asserted byte for byte against what the other side expects: the SQS partial-batch response, the Runtime API streaming prelude, CloudWatch EMF, X-Ray trace headers, RFC 9457 problem details and the IETF rate-limit fields.
-- **Every example runs.** Code in doc comments and in this guide is compiled and executed as a doctest.
+- **Rust examples are checked.** Guide and API samples run as doctests unless marked `no_run`, which compiles them without execution. Cargo examples compile in the feature checks. Skill examples are guidance and must also be checked in the function where they are used.

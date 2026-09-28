@@ -83,6 +83,7 @@ fn an_expired_deadline_reports_zero_and_its_children_are_expired() {
 fn a_child_budget_is_clamped_to_its_parent() {
     let parent = budget(Duration::from_millis(100));
     assert_eq!(parent.child(Duration::from_secs(300)), parent);
+    assert_eq!(parent.child(Duration::MAX), parent);
     assert!(parent.child(Duration::from_millis(10)) < parent);
 }
 
@@ -93,7 +94,7 @@ fn a_margin_moves_a_deadline_earlier_and_never_later() {
         deadline.with_margin(Duration::from_secs(5)).instant() + Duration::from_secs(5),
         deadline.instant()
     );
-    assert_eq!(deadline.with_margin(Duration::MAX), deadline);
+    assert!(deadline.with_margin(Duration::MAX).is_expired());
 }
 
 #[test]

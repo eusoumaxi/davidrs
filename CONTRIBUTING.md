@@ -38,7 +38,7 @@ Write the chapter so that someone who has not seen the code can do all four of t
 3. Recognise the failure they are likely to hit — a platform setting left off, a feature unified away by the workspace, a `200` that did not do the whole batch — and know what to change.
 4. Find the boundary: what this module will not do, and which other tool does that job.
 
-Keep the examples compilable. They run as doctests. Prefer a runnable example to a paragraph that describes one. Neutral vocabulary, as in the design rules above. When a limit comes from AWS, cite the AWS page, as the security chapter does.
+Keep examples compilable. Rustdoc compiles Rust snippets as doctests; `no_run` snippets compile without executing network-dependent code. Prefer a runnable example to a paragraph that describes one. Neutral vocabulary, as in the design rules above. When a limit comes from AWS, cite the AWS page, as the security chapter does.
 
 ## Tests
 
@@ -47,7 +47,7 @@ Keep the examples compilable. They run as doctests. Prefer a runnable example to
 - One behaviour per test, named as a sentence: `a_5xx_never_renders_its_message`. A test that needs a reason gets a `///` line, not a comment inside the body.
 - Cover every public item and every error branch, once. Two tests that fail for the same reason are one test too many.
 - No network, no AWS account: remote ends are the local server in `tests/support/server.rs` or the SDK's in-process test client. Timing assertions use generous margins.
-- Examples in doc comments and in the guide (`docs/*.md`) are compiled and run as doctests; prefer a runnable example to prose.
+- Rust examples in doc comments and the guide (`docs/*.md`) are doctests: ordinary blocks run, `no_run` blocks only compile. Prefer runnable, account-free examples.
 
 ## Checks
 
@@ -110,7 +110,7 @@ AI coding assistants are welcome. Their output meets the same bar as anyone's, a
 - **Same rules.** Branch names, commit messages, rustdoc-only comments, neutral vocabulary and tests through the public API apply unchanged. Agents read them from [`AGENTS.md`](AGENTS.md).
 - **Small and deliberate.** One concern per pull request. No generated churn: mass reformatting, speculative abstractions, reworded documentation that says nothing new, or tests that assert what the code happens to do rather than what it should do.
 - **No invented facts.** Every API, flag, limit and link a change mentions must exist. Limits of AWS services cite the AWS documentation, as the guide does.
-- **Verified reports only.** An issue or a security report must describe a problem you reproduced. Unverified output from a scanner or an assistant is closed.
+- **Evidence for reports.** Include reproduction steps when available. For a suspected security issue, identify the affected code and explain the possible impact even if you cannot safely reproduce it; disclose uncertainty instead of claiming a confirmed vulnerability.
 - **Your right to submit it.** You confirm that you may contribute the change under the MIT licence, and that it does not reproduce code whose licence forbids that.
 
 ## Releases
@@ -135,4 +135,4 @@ Once per repository:
 
 ## Licence
 
-`davidrs` is released under the [MIT licence](LICENSE). Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in the crate is licensed under the same terms, without any additional terms or conditions.
+`davidrs` is released under the [MIT licence](LICENSE). Dependencies retain their own licences; preserve the required notices when distributing them. `cargo deny` checks dependency licences against `deny.toml`. Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in the crate is licensed under the same terms, without any additional terms or conditions.

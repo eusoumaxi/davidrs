@@ -153,9 +153,35 @@ fn a_full_document_still_updates_its_metrics_and_dimensions() {
 }
 
 #[test]
-fn a_value_that_is_not_finite_is_written_as_null() {
-    let document = render(&Metrics::new("N").metric("ratio", f64::NAN, Unit::None));
-    assert_eq!(document["ratio"], Value::Null);
+fn non_finite_metrics_are_rejected_before_cloudwatch_discards_the_document() {
+    for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+        assert!(
+            Metrics::new("N")
+                .metric("ratio", value, Unit::None)
+                .to_json(UNIX_EPOCH)
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn fields_cannot_overwrite_emf_metadata_or_each_other() {
+    for metrics in [
+        Metrics::new("N").dimension("_aws", "value"),
+        Metrics::new("N").metric("_aws", 1.0, Unit::Count),
+        Metrics::new("N").property("_aws", "value"),
+        Metrics::new("N")
+            .dimension("shared", "value")
+            .metric("shared", 1.0, Unit::Count),
+        Metrics::new("N")
+            .dimension("shared", "value")
+            .property("shared", "value"),
+        Metrics::new("N")
+            .metric("shared", 1.0, Unit::Count)
+            .property("shared", "value"),
+    ] {
+        assert!(metrics.to_json(UNIX_EPOCH).is_err());
+    }
 }
 
 #[test]

@@ -163,8 +163,8 @@ impl Failure {
     /// The message a client may see: the message for a 4xx, and
     /// [`INTERNAL_MESSAGE`] for every 5xx however the failure was built.
     ///
-    /// This is the one accessor a renderer has for the message, which is what
-    /// makes leaking impossible.
+    /// Renderers must use this accessor for client-visible text.
+    /// [`internal_detail`](Self::internal_detail) and `Debug` are diagnostic only.
     pub fn public_message(&self) -> &str {
         if self.status.is_server_error() {
             INTERNAL_MESSAGE

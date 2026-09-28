@@ -48,8 +48,15 @@ pub struct VerifierConfig {
     pub leeway: Duration,
     /// Shortest interval between two successful JWKS refreshes.
     ///
-    /// It bounds how often an unknown `kid` can cause a fetch.
+    /// It bounds how often an unknown `kid` can cause a fetch. The effective
+    /// interval is capped by [`cache_ttl`](Self::cache_ttl).
     pub min_refresh_interval: Duration,
+    /// Longest time a downloaded key set may be used without refreshing.
+    ///
+    /// Defaults to one hour. Expired keys are never used when refreshing
+    /// fails, so removing a compromised key also takes effect in warm
+    /// instances. Keep this longer than the expected JWKS request latency.
+    pub cache_ttl: Duration,
 }
 
 impl VerifierConfig {
@@ -70,6 +77,7 @@ impl VerifierConfig {
             required_claims: Vec::new(),
             leeway: Duration::from_secs(60),
             min_refresh_interval: Duration::from_secs(60),
+            cache_ttl: Duration::from_secs(60 * 60),
         }
     }
 
@@ -110,6 +118,16 @@ impl VerifierConfig {
     #[must_use]
     pub fn with_min_refresh_interval(mut self, interval: Duration) -> Self {
         self.min_refresh_interval = interval;
+        self
+    }
+
+    /// Sets the maximum age of cached keys, including keys with known ids.
+    ///
+    /// This also caps the minimum refresh interval. A zero lifetime refuses
+    /// every token because the downloaded keys expire immediately.
+    #[must_use]
+    pub fn with_cache_ttl(mut self, ttl: Duration) -> Self {
+        self.cache_ttl = ttl;
         self
     }
 }
@@ -159,7 +177,12 @@ impl Verifier {
     /// than [`MAX_JWKS_BYTES`], is not a JWKS document, or holds no usable RSA
     /// key.
     pub async fn load(http: reqwest::Client, config: VerifierConfig) -> Result<Self, RuntimeError> {
-        let keys = jwks::KeyStore::new(http, config.jwks_url.clone(), config.min_refresh_interval);
+        let keys = jwks::KeyStore::new(
+            http,
+            config.jwks_url.clone(),
+            config.min_refresh_interval,
+            config.cache_ttl,
+        );
         keys.refresh_now().await?;
         Ok(Self { config, keys })
     }
@@ -170,7 +193,12 @@ impl Verifier {
     /// should not pay for a JWKS request it may not need.
     #[must_use]
     pub fn deferred(http: reqwest::Client, config: VerifierConfig) -> Self {
-        let keys = jwks::KeyStore::new(http, config.jwks_url.clone(), config.min_refresh_interval);
+        let keys = jwks::KeyStore::new(
+            http,
+            config.jwks_url.clone(),
+            config.min_refresh_interval,
+            config.cache_ttl,
+        );
         Self { config, keys }
     }
 
@@ -180,6 +208,8 @@ impl Verifier {
     /// at most one refresh, shared by concurrent callers and skipped when the
     /// last refresh is younger than [`VerifierConfig::min_refresh_interval`],
     /// so neither case can flood the identity provider.
+    /// A known key also triggers a refresh after [`VerifierConfig::cache_ttl`];
+    /// verification fails closed if that refresh fails or removes the key.
     ///
     /// # Errors
     ///

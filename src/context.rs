@@ -119,6 +119,11 @@ pub struct Deadline {
 
 impl Deadline {
     /// A deadline `budget` from now.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `budget` exceeds the platform's [`Instant`] range. Use
+    /// [`child`](Self::child) to cap a supplied budget by an existing deadline.
     #[must_use]
     pub fn after(budget: Duration) -> Self {
         Self {
@@ -157,7 +162,10 @@ impl Deadline {
     #[must_use]
     pub fn with_margin(self, margin: Duration) -> Self {
         Self {
-            at: self.at.checked_sub(margin).unwrap_or(self.at),
+            at: self
+                .at
+                .checked_sub(margin)
+                .unwrap_or_else(|| Instant::now().min(self.at)),
         }
     }
 
@@ -165,7 +173,9 @@ impl Deadline {
     #[must_use]
     pub fn child(self, budget: Duration) -> Self {
         Self {
-            at: (Instant::now() + budget).min(self.at),
+            at: Instant::now()
+                .checked_add(budget)
+                .map_or(self.at, |at| at.min(self.at)),
         }
     }
 

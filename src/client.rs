@@ -45,8 +45,8 @@ impl Default for Limits {
 /// Builds a client over rustls, with `ring` and the Mozilla roots compiled in.
 ///
 /// The TLS configuration is built here explicitly, so nothing is read from
-/// the operating system's certificate store at startup (tens of milliseconds
-/// of every cold start), the binary runs on a distroless image, and no
+/// the operating system's certificate store at startup, the binary runs on
+/// a distroless image, and no
 /// process-wide crypto provider is installed behind the caller's back.
 /// Redirects are disabled: a redirect the application did not ask for
 /// forwards custom credential headers such as `x-api-key` to whatever host the

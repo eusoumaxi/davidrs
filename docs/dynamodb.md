@@ -31,7 +31,7 @@ async fn orders(
     user: &str,
     token: Option<&str>,
     deadline: Deadline,
-) -> Result<(Vec<serde_json::Map<String, serde_json::Value>>, Option<String>), RuntimeError> {
+) -> Result<(Vec<serde_json::Map<String, serde_json::Value>>, Option<String>, bool), RuntimeError> {
     let mut start = token.and_then(|token| dynamo::decode_cursor_signed(token, secret));
     let page = dynamo::query_bounded(PageLimits::new(50, 5), deadline, |resume| {
         client
@@ -42,6 +42,7 @@ async fn orders(
             .set_exclusive_start_key(resume.or_else(|| start.take()))
     })
     .await?;
+    let complete = page.is_complete();
     let next = page
         .next
         .map(|key| dynamo::encode_cursor_signed(key, secret))
@@ -51,9 +52,11 @@ async fn orders(
         .into_iter()
         .map(|item| dynamo::to_object(item, &["PK", "SK"]))
         .collect::<Result<_, _>>()?;
-    Ok((items, next))
+    Ok((items, next, complete))
 }
 ```
+
+Pass `user` from the authorized caller or tenant in the handler's `Grant`, never directly from a query parameter. Return the completion flag with the items and token so a deadline before the first page cannot look like an empty result.
 
 The first call receives `None` and starts from the client's token; every later call receives the key the service returned. [`Page::stopped_by`](crate::dynamo::Page::stopped_by) tells the three stops apart: [`Stop::Items`](crate::dynamo::Stop::Items) is a full page, [`Stop::Pages`](crate::dynamo::Stop::Pages) means the pages came back short, because a filter expression discarded items or a page reached the service's 1 MB size, and [`Stop::Deadline`](crate::dynamo::Stop::Deadline) means the invocation ran short. A read that stops before its first page has no key to resume from, so `next` is `None` there, and `is_complete` is still `false`.
 
@@ -134,7 +137,7 @@ async fn save(client: &aws_sdk_dynamodb::Client, ids: &[String], deadline: Deadl
 
 - **No repository and no mapper.** Keys, conditions and item shapes differ in every table, and a layer that hides them also hides which items were actually read or written. Use the SDK's builders and [`serde_dynamo`] for item shapes.
 - **No transactions and no single-item helpers.** `GetItem`, `PutItem`, `UpdateItem` and `TransactWriteItems` are one SDK call each.
-- **No deadline inside a request.** The deadline is checked before every request; one request in flight is bounded by the SDK's own timeouts.
+- **No cancellation of remote writes.** Deadlines bound requests in flight. A timed-out query returns an incomplete page; a timed-out batch returns `RuntimeError::DeadlineExceeded`. A write may have completed remotely, so retry only when doing so is safe.
 - **No resuming a failed read.** When a page request fails, the pages already read are discarded and the error is returned. Keep `max_items` small if partial progress matters.
 
 ## If the read looks complete and is not

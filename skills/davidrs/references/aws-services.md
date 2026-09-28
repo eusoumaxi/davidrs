@@ -155,11 +155,11 @@ if let Some(endpoint) = optional_env("DYNAMODB_ENDPOINT") {
 let orders = aws_sdk_dynamodb::Client::from_conf(orders.build());
 ```
 
-Tests need no account: build the SDK client over an in-process HTTP client (`aws-smithy-http-client` with `test-util`), as the crate's [DynamoDB tests](https://github.com/eusoumaxi/davidrs/blob/main/tests/table.rs) do.
+Tests need no account: build the SDK client over an in-process HTTP client (`aws-smithy-http-client` with `test-util`), as the crate's [DynamoDB tests](https://github.com/eusoumaxi/davidrs/blob/main/tests/dynamo.rs) do.
 
 ## DynamoDB (`dynamo`)
 
-**Bounded reads.** `query_bounded(PageLimits::new(max_items, max_pages), deadline, |resume| builder)` calls the closure once per page with the key to start from (`None` first) and lowers each request's `Limit` to the items still wanted, so `Page::next` resumes exactly; `scan_bounded` is the same for scans. `Page::stopped_by` is `None` (read to the end), `Stop::Items` (a full page), `Stop::Pages` (pages came back short: a filter discarded items, or a page reached 1 MB) or `Stop::Deadline`. `next` is `None` both when the read is complete and when it stopped before its first page, so test `is_complete()`. A failed page request discards the pages already read and returns the error.
+**Bounded reads.** `query_bounded(PageLimits::new(max_items, max_pages), deadline, |resume| builder)` calls the closure once per page with the key to start from (`None` first) and lowers each request's `Limit` to the items still wanted, so `Page::next` resumes exactly; `scan_bounded` is the same for scans. `Page::stopped_by` is `None` (read to the end), `Stop::Items` (a full page), `Stop::Pages` (pages came back short: a filter discarded items, or a page reached 1 MB) or `Stop::Deadline`. `next` is `None` both when the read is complete and when it stopped before its first page, so test `is_complete()`. An in-flight timeout returns the previous pages and their resume key with `Stop::Deadline`; other request failures return an error. A zero item cap makes no request. Batch timeouts in flight return `RuntimeError::DeadlineExceeded`, and remote writes may still have completed.
 
 **Page tokens.** `encode_cursor_signed(key, &cursor_key)` writes the key's JSON and its HMAC-SHA256 in URL-safe base64; `decode_cursor_signed` returns `None` for an edited, forged or garbled token, which restarts at the first page. Build the `CursorSecret` from a secret read at cold start (32 random bytes). A signed token is tamper-proof, not secret; the unsigned `encode_cursor`/`decode_cursor` are readable and editable. Either way the tenant stays in the key condition; a scan has no partition boundary, so apply the tenant there as a filter.
 
@@ -216,7 +216,7 @@ let claimed = match deadline.run(put).await? {
 
 ## EventBridge (`eventbridge`)
 
-`PutEvents` answers `200` while rejecting individual entries; here every entry has an explicit outcome. The detail is any `Serialize` value. Publish after the change is stored, and fail the invocation unless the entry was accepted, so a retry publishes again:
+`PutEvents` answers `200` while rejecting individual entries; here every entry has an explicit outcome. The detail is any `Serialize` value. After storing a change, report publication failures so a retry can publish again. The write must be idempotent and retries must still publish; use a transactional outbox when the change and pending event must be atomic:
 
 ```rust
 use davidrs::eventbridge::{self, EntryOutcome, EventRoute};
@@ -301,9 +301,9 @@ let policy = Access::new(subject)
     .require_caller();
 ```
 
-- `VerifierConfig` accepts no token until `with_audiences` is set; a token without `aud` is matched on `client_id`, as an API Gateway JWT authorizer does. `requiring` pins a claim (`token_use` is Amazon Cognito's). `without_audience_check` is only for an issuer that serves this application alone. `leeway` and `min_refresh_interval` (60 s each) are public fields.
+- `VerifierConfig` accepts no token until `with_audiences` is set; a token without `aud` is matched on `client_id`, as an API Gateway JWT authorizer does. `requiring` pins a claim (`token_use` is Amazon Cognito's). `without_audience_check` is only for an issuer that serves this application alone. `leeway` and `min_refresh_interval` (60 s each) and `cache_ttl` (one hour) are public fields. `with_cache_ttl` sets the maximum cache age and caps the refresh interval; expired keys require a successful refresh.
 - `Verifier::load` fetches the key set before returning, so a wrong URL fails the cold start; `Verifier::deferred` fetches on the first token.
-- RS256 only. Tokens over `MAX_TOKEN_BYTES` (8 KiB) and key sets over `MAX_JWKS_BYTES` (64 KiB) are refused; an unknown `kid` causes at most one shared refresh per interval. `exp` is required and `nbf` honoured; `iat` is not checked, and there is no revocation.
+- RS256 only, using keys explicitly marked `kty: RSA` whose optional `alg`, `use` and `key_ops` permit RS256 signature verification. Unsupported critical JOSE extensions are rejected. Tokens over `MAX_TOKEN_BYTES` (8 KiB) and key sets over `MAX_JWKS_BYTES` (64 KiB) are refused; an unknown `kid` or expired cache triggers a shared, rate-limited refresh. A failed refresh never extends the cache lifetime. `exp` is required and `nbf` honoured; `iat` and individual token revocation are not checked.
 - In a custom `Policy`, `verifier.verify(bearer(header)).await` returns `VerifiedClaims` (`subject`, `string`, `get`, `expires_at`, `all`) or a `VerifyError`: answer every variant with the same `401` and keep the reason in `with_detail`.
 
 ## Caches, gzip and digests (`cache`, `compression`, `digest`)
@@ -336,6 +336,7 @@ let key = sha256_hex(document.as_bytes());
 ## Telemetry (`logs`, `metrics`, `otel`)
 
 - `let _telemetry = davidrs::telemetry::init("service")?;` comes first in `main`; keep the guard until `main` returns. A second call is an error. `RUST_LOG` takes a bare level (`debug`, `warn`), not directives.
+- `Metrics::to_json` rejects non-finite values, the reserved `_aws` name and names shared by metrics, dimensions or properties.
 - `telemetry::logs::timed_init("component", future)` logs a startup step's `init_ms` and `success`, never its value or error.
 - Every pipeline opens a `lambda.invocation` span carrying the request id; your own `tracing` spans nest under it.
 - `otel`: `init` also exports each finished span to the sandbox's X-Ray agent over UDP. Set the function's tracing mode to Active. Every span is exported (the incoming `Sampled` flag is not read), and outbound calls carry no trace header unless you set `X-Amzn-Trace-Id`.

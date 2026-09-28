@@ -286,6 +286,14 @@ async fn without_a_header_the_fallback_names_the_callers_tenant() {
 }
 
 #[tokio::test]
+async fn a_fallback_cannot_grant_a_tenant_outside_the_callers_membership() {
+    let policy = Access::new(user)
+        .tenancy(Tenancy::header("x-tenant-id", member).or_else(|_| Some("tenant-c".to_owned())));
+    let failure = refused(authorize(&policy, &signed_in(alice(), json!({}))).await);
+    assert_eq!(failure.code(), codes::FORBIDDEN);
+}
+
+#[tokio::test]
 async fn without_a_header_or_a_fallback_no_tenant_is_selected() {
     let policy = Access::new(user).tenancy(Tenancy::header("x-tenant-id", member));
     assert_eq!(
