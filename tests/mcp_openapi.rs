@@ -657,3 +657,160 @@ async fn a_configured_header_is_sent_and_arguments_cannot_replace_it() {
     assert_eq!(values, ["service-secret"]);
     assert!(sent.header("authorization").is_none());
 }
+
+/// A `null` value for a nullable field of a flattened body is forwarded to
+/// the upstream, not dropped before the request. Against an RFC 7396 JSON
+/// Merge Patch server — omitted field = no-op, `null` field = delete — the
+/// caller's intent reaches the resource: the tool reports success and the
+/// field is cleared.
+#[tokio::test]
+async fn a_null_patch_clears_a_merge_patch_resource_with_a_flattened_body() {
+    let resource: Arc<std::sync::Mutex<Value>> =
+        Arc::new(std::sync::Mutex::new(json!({ "note": "hello" })));
+    let document = json!({
+        "openapi": "3.1.0",
+        "paths": {
+            "/items/{id}": {
+                "patch": {
+                    "operationId": "patchItem",
+                    "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": {
+                        "type": "object", "properties": { "note": { "type": ["string", "null"] } }
+                    } } } }
+                }
+            }
+        }
+    });
+    let resource_for_server = Arc::clone(&resource);
+    let upstream = server::Server::start(move |recorded| {
+        let resource = Arc::clone(&resource_for_server);
+        async move {
+            if let Ok(patch) = serde_json::from_slice::<Value>(&recorded.body)
+                && let Some(obj) = patch.as_object()
+            {
+                let mut state = resource.lock().expect("state");
+                let state_obj = state.as_object_mut().expect("object");
+                for (k, v) in obj {
+                    if v.is_null() {
+                        state_obj.remove(k);
+                    } else {
+                        state_obj.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+            let body = serde_json::to_string(&*resource.lock().expect("state")).expect("json");
+            server::reply(200, "application/json", body)
+        }
+    })
+    .await;
+    let api = OpenApi::new(&document, upstream.url(""), http()).expect("document");
+    let server = mcp(api);
+    let result = call(&server, "patchItem", json!({ "id": "i1", "note": null })).await;
+    let (message, is_error) = text(&result);
+    assert!(!is_error, "tool reported an error: {message}");
+    let body_sent: Value = serde_json::from_slice(&only(&upstream).body).expect("the PATCH body");
+    let final_state = resource.lock().expect("state").clone();
+    assert_eq!(body_sent, json!({ "note": null }));
+    assert_eq!(
+        final_state,
+        json!({}),
+        "the upstream resource is cleared because the null reached it"
+    );
+}
+
+/// Required and nullable are independent in OpenAPI: a field may be listed in
+/// `required` and still accept `null`. The server treats a body field as
+/// present when the key is there — even with a `null` value — and forwards
+/// the `null`, leaving nullability enforcement to the upstream, rather than
+/// rejecting the call as a missing argument.
+#[tokio::test]
+async fn a_null_required_nullable_body_field_is_forwarded_not_rejected() {
+    let document = json!({
+        "openapi": "3.1.0",
+        "paths": {
+            "/items/{id}": {
+                "patch": {
+                    "operationId": "patchItem",
+                    "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": {
+                        "type": "object",
+                        "required": ["note"],
+                        "properties": { "note": { "type": ["string", "null"] } }
+                    } } } }
+                }
+            }
+        }
+    });
+    let upstream = upstream(200, "application/json", "{}").await;
+    let api = OpenApi::new(&document, upstream.url(""), http()).expect("document");
+    let server = mcp(api);
+    let result = call(&server, "patchItem", json!({ "id": "i1", "note": null })).await;
+    let (message, is_error) = text(&result);
+    assert!(!is_error, "tool reported an error: {message}");
+    let body: Value = serde_json::from_slice(&only(&upstream).body).expect("JSON");
+    assert_eq!(body, json!({ "note": null }));
+}
+
+/// A `null` for a required path parameter is still reported as a missing
+/// argument: the null-as-missing rule is confined to parameters, which can
+/// never carry `null`, so the request never reaches the upstream.
+#[tokio::test]
+async fn a_null_required_path_parameter_is_still_missing() {
+    let document = json!({
+        "openapi": "3.1.0",
+        "paths": {
+            "/items/{id}": {
+                "patch": {
+                    "operationId": "patchItem",
+                    "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": {
+                        "type": "object", "properties": { "note": { "type": "string" } }
+                    } } } }
+                }
+            }
+        }
+    });
+    let upstream = upstream(200, "application/json", "{}").await;
+    let api = OpenApi::new(&document, upstream.url(""), http()).expect("document");
+    let server = mcp(api);
+    let result = call(&server, "patchItem", json!({ "id": null, "note": "x" })).await;
+    let (message, is_error) = text(&result);
+    assert!(is_error, "expected an error, got: {message}");
+    assert!(
+        message.contains("Missing required arguments: id"),
+        "got: {message}"
+    );
+    assert!(upstream.requests().is_empty());
+}
+
+/// A whole `body` argument of `null` sends no body, as it did before this
+/// distinction between parameters and body fields was drawn: the null is not
+/// serialized as the literal JSON value `null` over the wire.
+#[tokio::test]
+async fn a_null_whole_body_sends_no_body() {
+    let document = json!({
+        "openapi": "3.1.0",
+        "paths": {
+            "/items/{id}": {
+                "patch": {
+                    "operationId": "patchItem",
+                    "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+                    "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "string" } } } }
+                }
+            }
+        }
+    });
+    let upstream = upstream(204, "application/json", "").await;
+    let api = OpenApi::new(&document, upstream.url(""), http()).expect("document");
+    let server = mcp(api);
+    let result = call(&server, "patchItem", json!({ "id": "i1", "body": null })).await;
+    let (message, is_error) = text(&result);
+    assert!(!is_error, "tool reported an error: {message}");
+    let sent = only(&upstream);
+    assert_eq!(
+        (sent.method.as_str(), sent.path.as_str()),
+        ("PATCH", "/items/i1")
+    );
+    assert!(sent.body.is_empty());
+    assert!(sent.header("content-type").is_none());
+}

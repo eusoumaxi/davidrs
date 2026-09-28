@@ -14,6 +14,14 @@ version may change the public API, and its entry says how.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
 
+### Fixed
+
+- OpenAPI tools forward a `null` body field to the upstream instead of
+  dropping it, so a `null` sent to clear a nullable field (for example an
+  RFC 7396 merge-patch delete) reaches the API. `null` path, query and
+  header parameters are still treated as missing, and a whole `body` of
+  `null` still sends no body.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.

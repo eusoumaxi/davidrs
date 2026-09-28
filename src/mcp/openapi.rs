@@ -555,17 +555,29 @@ fn inline(node: &Value, document: &Value, seen: &mut Vec<String>, budget: &mut u
 }
 
 /// One call: the arguments as a request, the API's answer as a value.
+///
+/// A `null` argument is treated as missing only where it cannot be sent as a
+/// value: path, query and header parameters never carry `null`, and a whole
+/// `body` of `null` sends no body. The fields of a flattened body are
+/// different — `null` is a value the upstream should see (RFC 7396 JSON Merge
+/// Patch, for instance, reads `null` as a delete), so it stays in the request
+/// body instead of being dropped before the call.
 async fn forward(
     operation: Arc<Operation>,
     upstream: Arc<Upstream>,
     mut arguments: Map<String, Value>,
     authorization: Option<String>,
 ) -> Result<Value, Failure> {
-    arguments.retain(|_, value| !value.is_null());
     let missing: Vec<&str> = operation
         .required
         .iter()
-        .filter(|name| !arguments.contains_key(*name))
+        .filter(|name| {
+            if operation.parameters.iter().any(|p| &p.name == *name) {
+                arguments.get(*name).is_none_or(Value::is_null)
+            } else {
+                !arguments.contains_key(*name)
+            }
+        })
         .map(String::as_str)
         .collect();
     if !missing.is_empty() {
@@ -581,6 +593,9 @@ async fn forward(
         let Some(value) = arguments.remove(&parameter.name) else {
             continue;
         };
+        if value.is_null() {
+            continue;
+        }
         let items: Vec<String> = match value {
             Value::Array(items) => items.iter().map(text).collect(),
             other => vec![text(&other)],
@@ -634,8 +649,8 @@ async fn forward(
     request = match operation.body {
         Body::None => request,
         Body::Whole => match arguments.remove("body") {
-            Some(body) => request.json(&body),
-            None => request,
+            Some(body) if !body.is_null() => request.json(&body),
+            _ => request,
         },
         Body::Fields => request.json(&arguments),
     };
