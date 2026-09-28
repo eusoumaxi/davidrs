@@ -152,7 +152,7 @@ For an explicit version or a retry, the manual tag workflow remains available:
 Once per repository:
 
 - **First publish.** crates.io only accepts trusted publishing for a crate that already exists, so publish the first version from your machine with `cargo publish`. Then, on crates.io, add a trusted publisher to the crate: repository `eusoumaxi/davidrs`, workflow `release.yml`, environment `release`. Push the tag afterwards: the workflow sees the version is already published and only creates the release and the site.
-- **Environments.** In the repository settings, protect the `release` environment (for example, with a required reviewer), and allow tags `v*` to deploy to `github-pages`.
+- **Environments.** In the repository settings, protect the `release` environment (for example, with a required reviewer), and allow `main` and tags `v*` to deploy to `github-pages`.
 
 ## Licence
 
