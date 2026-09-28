@@ -153,6 +153,50 @@ async fn a_producer_failure_ends_the_stream_with_that_error() {
     assert!(body.next().await.is_none());
 }
 
+/// A producer that keeps writing after `fail` does not push its later chunks
+/// through: the failure is final from the consumer's side, as the doc on
+/// `Producer::fail` says it ends the stream.
+#[tokio::test]
+async fn a_producer_failure_ends_the_stream_even_when_it_keeps_sending() {
+    let body = StreamBody::spawn(4, a_minute(), |producer| async move {
+        producer.send("first").await;
+        producer
+            .fail(RuntimeError::message("upstream refused"))
+            .await;
+        producer.send("after-fail-1").await;
+        producer.send("after-fail-2").await;
+    });
+    let items: Vec<_> = body.collect().await;
+    assert_eq!(items.len(), 2, "the stream ends at the failure");
+    assert_eq!(items[0].as_ref().expect("chunk"), "first");
+    assert_eq!(
+        items[1].as_ref().expect_err("failure").to_string(),
+        "upstream refused"
+    );
+}
+
+/// A producer that hangs after `fail` does not later surface a
+/// `DeadlineExceeded`: the stream has already ended at the failure, so the
+/// deadline path cannot add a second error item.
+#[tokio::test]
+async fn a_producer_failure_ends_the_stream_before_the_deadline_lapses() {
+    let deadline = Deadline::after(Duration::from_millis(100));
+    let mut body = StreamBody::spawn(4, deadline, |producer| async move {
+        producer.send("first").await;
+        producer
+            .fail(RuntimeError::message("upstream refused"))
+            .await;
+        std::future::pending::<()>().await;
+    });
+    assert_eq!(body.next().await.expect("chunk").expect("ok"), "first");
+    let error = body.next().await.expect("item").expect_err("failure");
+    assert_eq!(error.to_string(), "upstream refused");
+    let after = tokio::time::timeout(Duration::from_secs(2), body.next())
+        .await
+        .expect("the stream ends at the failure, not after the deadline");
+    assert!(after.is_none(), "no second error after the failure");
+}
+
 /// The panic message is not repeated: it may hold whatever the producer was
 /// working on.
 #[tokio::test]

@@ -224,7 +224,11 @@ impl futures_util::Stream for StreamBody {
             return Poll::Ready(None);
         }
         match self.receiver.poll_recv(context) {
-            Poll::Ready(Some(chunk)) => Poll::Ready(Some(chunk)),
+            Poll::Ready(Some(Ok(chunk))) => Poll::Ready(Some(Ok(chunk))),
+            Poll::Ready(Some(Err(error))) => {
+                self.finished = true;
+                Poll::Ready(Some(Err(error)))
+            }
             Poll::Ready(None) => {
                 let result = match self.producer.as_mut() {
                     Some(handle) => match Pin::new(handle).poll(context) {

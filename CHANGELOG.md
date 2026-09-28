@@ -14,6 +14,13 @@ version may change the public API, and its entry says how.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
 
+### Fixed
+
+- `Producer::fail` now ends the stream at the failure, matching its
+  documented contract: chunks a producer sends after `fail` are no longer
+  delivered, and a producer that hangs after `fail` cannot surface a later
+  `DeadlineExceeded` as a second error item.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.
