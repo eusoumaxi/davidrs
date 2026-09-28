@@ -294,6 +294,24 @@ async fn cancelled_refreshes_also_observe_the_failure_cooldown() {
     assert_eq!(server.hits("/jwks"), 1);
 }
 
+/// An in-flight refresh must not reject a valid concurrent token: the second
+/// caller queues behind the coalescing mutex and re-checks the cache once the
+/// fetch succeeds, instead of reading a phantom "recent failure".
+#[tokio::test]
+async fn a_concurrent_refresh_does_not_reject_a_valid_token() {
+    let jwks = Jwks::serving(vec![jwk("k1")]).await;
+    let verifier = Arc::new(Verifier::deferred(http(), jwks.config()));
+    let v1 = Arc::clone(&verifier);
+    let v2 = Arc::clone(&verifier);
+    let t1 = tokio::spawn(async move { v1.verify(&valid("k1")).await });
+    let t2 = tokio::spawn(async move { v2.verify(&valid("k1")).await });
+    let r1 = t1.await.expect("t1");
+    let r2 = t2.await.expect("t2");
+    r1.expect("the first token verifies");
+    r2.expect("the second token verifies");
+    assert_eq!(jwks.fetches(), 1, "one fetch shared by both");
+}
+
 #[tokio::test]
 async fn jwks_transport_errors_do_not_disclose_the_endpoint_url() {
     let config = VerifierConfig::new(ISSUER, "http://127.0.0.1:1/jwks?key=private-value");

@@ -14,6 +14,15 @@ version may change the public API, and its entry says how.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
 
+### Fixed
+
+- Concurrent JWKS refreshes no longer reject valid tokens with
+  `UnknownKey`. An in-flight refresh was marked as failed before the
+  download completed, so overlapping verifications read a phantom recent
+  failure and returned `UnknownKey` instead of queuing on the coalescing
+  mutex; the failure timestamp is now recorded only when the refresh is
+  cancelled, not when it starts.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.

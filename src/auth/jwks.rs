@@ -72,6 +72,21 @@ pub(crate) struct KeyStore {
 /// one request per pause from each instance, not one per incoming token.
 const FAILURE_COOLDOWN: Duration = Duration::from_secs(5);
 
+/// Records an in-flight refresh as failed if its future is cancelled, so the
+/// cooldown that protects the identity provider still applies after an
+/// abandoned refresh. `failed_at` is written on drop only while the download
+/// is pending; on normal completion this guard is forgotten so the
+/// post-`download` block remains the sole authority on `failed_at`.
+struct CancelledAsFailure<'a>(&'a RwLock<Option<Instant>>);
+
+impl Drop for CancelledAsFailure<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut slot) = self.0.write() {
+            *slot = Some(Instant::now());
+        }
+    }
+}
+
 impl KeyStore {
     pub(crate) fn new(
         http: reqwest::Client,
@@ -157,9 +172,7 @@ impl KeyStore {
     /// verification. Other algorithms, encryption keys and keys whose
     /// operations exclude verification are skipped.
     async fn fetch(&self) -> Result<(), RuntimeError> {
-        if let Ok(mut slot) = self.failed_at.write() {
-            *slot = Some(Instant::now());
-        }
+        let guard = CancelledAsFailure(&self.failed_at);
         let outcome = self.download().await;
         let failed_at = if outcome.is_err() {
             Some(Instant::now())
@@ -169,6 +182,7 @@ impl KeyStore {
         if let Ok(mut slot) = self.failed_at.write() {
             *slot = failed_at;
         }
+        std::mem::forget(guard);
         outcome
     }
 
