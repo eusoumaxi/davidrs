@@ -731,8 +731,6 @@ mod logs {
             .finish();
         let _guard = tracing::subscriber::set_default(subscriber);
 
-        // Admission refuses with a `429 ERROR_BUSY` before the body is
-        // decoded; the pipeline tags it `FailureKind::Admission`.
         api()
             .admission(Exhausted)
             .handle(
@@ -742,8 +740,6 @@ mod logs {
                 &busy_handler,
             )
             .await;
-        // The handler refuses with the same `429 ERROR_BUSY`; it defaults to
-        // `FailureKind::Handler`.
         api()
             .handle(
                 Arc::new(App::default()),
@@ -760,8 +756,6 @@ mod logs {
             .collect();
         assert_eq!(refused.len(), 2, "expected two 4xx log lines, got: {logs}");
 
-        // The only field that can tell the two same-code 429s apart is
-        // `kind`; both lines must carry it, and it must differ between them.
         let kinds: Vec<&str> = refused
             .iter()
             .map(|line| {
@@ -783,7 +777,6 @@ mod logs {
             "two steps logged with the same kind: {logs}"
         );
 
-        // The safe metadata contract still holds: the message is never logged.
         assert!(
             !logs.contains("Slow down"),
             "message leaked into the log: {logs}"
