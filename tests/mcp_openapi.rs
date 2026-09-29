@@ -657,3 +657,93 @@ async fn a_configured_header_is_sent_and_arguments_cannot_replace_it() {
     assert_eq!(values, ["service-secret"]);
     assert!(sent.header("authorization").is_none());
 }
+
+/// `Authorization` is a singleton field (RFC 9110 §11.6.2): a configured
+/// `authorization` header takes precedence over a forwarded caller token,
+/// so the request carries exactly one `authorization` field line — the
+/// configured credential — and the caller's token never reaches the API.
+#[tokio::test]
+async fn a_configured_authorization_header_beats_a_forwarded_callers_token() {
+    let upstream = upstream(200, "application/json", r#"{"orders":[]}"#).await;
+    let api = api(&upstream.url("/v1/")).forward_caller_token().header(
+        HeaderName::from_static("authorization"),
+        HeaderValue::from_static("service-secret"),
+    );
+    let server = mcp(api);
+    call(
+        &server,
+        "listOrders",
+        json!({ "status": "OPEN", "X-Tenant": "t1" }),
+    )
+    .await;
+    let sent = only(&upstream);
+    let values: Vec<&str> = sent
+        .headers
+        .get_all("authorization")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .collect();
+    assert_eq!(values, ["service-secret"]);
+    assert_eq!(sent.header("authorization"), Some("service-secret"));
+}
+
+/// A configured `authorization` header is the credential on its own too:
+/// without `forward_caller_token`, the caller's own token is not forwarded,
+/// and the configured value is the single `authorization` field line sent.
+#[tokio::test]
+async fn a_configured_authorization_header_alone_is_the_credential() {
+    let upstream = upstream(200, "application/json", r#"{"orders":[]}"#).await;
+    let api = api(&upstream.url("/v1/")).header(
+        HeaderName::from_static("authorization"),
+        HeaderValue::from_static("service-secret"),
+    );
+    let server = mcp(api);
+    call(
+        &server,
+        "listOrders",
+        json!({ "status": "OPEN", "X-Tenant": "t1" }),
+    )
+    .await;
+    let sent = only(&upstream);
+    let values: Vec<&str> = sent
+        .headers
+        .get_all("authorization")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .collect();
+    assert_eq!(values, ["service-secret"]);
+}
+
+/// A configured header that is not `authorization` travels alongside a
+/// forwarded caller token: both appear, each exactly once, because the
+/// singleton-field rule concerns `Authorization` alone.
+#[tokio::test]
+async fn a_configured_non_authorization_header_travels_with_the_callers_token() {
+    let upstream = upstream(200, "application/json", r#"{"orders":[]}"#).await;
+    let api = api(&upstream.url("/v1/")).forward_caller_token().header(
+        HeaderName::from_static("x-tenant"),
+        HeaderValue::from_static("service-secret"),
+    );
+    let server = mcp(api);
+    call(
+        &server,
+        "listOrders",
+        json!({ "status": "OPEN", "X-Tenant": "t1" }),
+    )
+    .await;
+    let sent = only(&upstream);
+    let auth: Vec<&str> = sent
+        .headers
+        .get_all("authorization")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .collect();
+    assert_eq!(auth, ["Bearer caller-token"]);
+    let tenant: Vec<&str> = sent
+        .headers
+        .get_all("x-tenant")
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .collect();
+    assert_eq!(tenant, ["service-secret"]);
+}

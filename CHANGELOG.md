@@ -14,6 +14,14 @@ version may change the public API, and its entry says how.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
 
+### Fixed
+
+- An OpenAPI call no longer emits two `Authorization` field lines when both
+  `OpenApi::forward_caller_token` and a configured `authorization` header are
+  set: the configured header wins, matching the precedence already given to
+  configured headers over argument-derived ones (`Authorization` is a
+  singleton field, RFC 9110 §11.6.2).
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.
