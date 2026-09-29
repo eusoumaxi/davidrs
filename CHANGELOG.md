@@ -7,7 +7,7 @@ version may change the public API, and its entry says how.
 
 ## [Unreleased]
 
-## [0.1.1] - 2026-09-29
+## [0.1.1](https://github.com/eusoumaxi/davidrs/compare/v0.1.0...v0.1.1) - 2026-09-29
 
 ### Changed
 
@@ -55,7 +55,7 @@ version may change the public API, and its entry says how.
   appends, instead of the first line, which a client can choose to pick
   its own rate-limit key.
 
-## [0.1.0] - 2026-09-27
+## [0.1.0](https://github.com/eusoumaxi/davidrs/releases/tag/v0.1.0) - 2026-09-27
 
 The first public release.
 
@@ -136,6 +136,3 @@ The first public release.
   span.
 - Streamed responses carry `Set-Cookie` headers in the stream's cookie list.
 - Rust 2024 edition; the minimum supported Rust is 1.94.1, checked in CI.
-
-[Unreleased]: https://github.com/eusoumaxi/davidrs/compare/v0.1.0...main
-[0.1.0]: https://github.com/eusoumaxi/davidrs/releases/tag/v0.1.0

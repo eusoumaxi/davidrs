@@ -68,6 +68,10 @@ if body is None:
     sys.exit('release-plz.toml sets no changelog body')
 heading = re.sub(r'[{][{]\\s*version\\s*[}][}]', '0.1.1', body[1])
 heading = re.sub(r'[{][{]\\s*timestamp[^}]*[}][}]', '2026-09-28', heading)
+heading = re.sub(
+    r'[{][{]\\s*release_link\\s*[}][}]',
+    'https://github.com/example/crate/compare/v0.1.0...v0.1.1', heading,
+)
 if '{' in heading:
     sys.exit('this stand-in renders only the version and the date')
 for name in ('Cargo.toml', 'Cargo.lock'):

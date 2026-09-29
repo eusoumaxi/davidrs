@@ -123,8 +123,9 @@ changes to `src/`, `Cargo.toml`, `Cargo.lock`, `build.rs` or
 Documentation, tests, skills and workflow changes alone do not publish a crate.
 [Release-plz](https://release-plz.dev) compares the package with crates.io,
 updates the version, and checks API compatibility with `cargo-semver-checks`.
-It writes no changelog entries: it adds the heading `## [X.Y.Z] - YYYY-MM-DD`
-below `## [Unreleased]`, so the entries written there become the new
+It writes no changelog entries: it adds the heading
+`## [X.Y.Z](link) - YYYY-MM-DD` below `## [Unreleased]`, linked to the
+comparison with the previous tag, so the entries written there become the new
 version's section and its release notes (`release-plz.toml`). Compatible
 changes normally increment the patch version; breaking changes increment the
 minor version before 1.0. Mark behavioural breaking changes with `!` or a
@@ -141,7 +142,7 @@ must allow both too. Never add the local `.env` token as a workflow secret.
 
 For an explicit version or a retry, the manual tag workflow remains available:
 
-1. On a branch such as `chore/release-0.2.0`, set `version` in `Cargo.toml`, rename `## [Unreleased]` in `CHANGELOG.md` to `## [0.2.0] - YYYY-MM-DD`, add a new empty `## [Unreleased]` above it, and update the links at the end of the file. Merge it as `chore(release): 0.2.0`.
+1. On a branch such as `chore/release-0.2.0`, set `version` in `Cargo.toml`, rename `## [Unreleased]` in `CHANGELOG.md` to `## [0.2.0](https://github.com/eusoumaxi/davidrs/compare/v0.1.1...v0.2.0) - YYYY-MM-DD`, linked to the comparison with the previous tag, and add a new empty `## [Unreleased]` above it. Merge it as `chore(release): 0.2.0`.
 2. Tag the merged commit on `main` and push the tag:
 
    ```bash
