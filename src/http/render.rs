@@ -19,7 +19,7 @@ use super::response::{HttpResponse, apply_headers};
 /// # Examples
 ///
 /// ```
-/// use davidrs::http::{literal, ErrorRenderer, Failure, HttpResponse};
+/// use davidrs::http::{literal, ErrorRenderer, Failure, HeaderMap, HttpResponse};
 ///
 /// struct TextErrors;
 ///
@@ -27,9 +27,8 @@ use super::response::{HttpResponse, apply_headers};
 ///     fn render(&self, failure: &Failure) -> HttpResponse {
 ///         let body = format!("{}: {}", failure.code(), failure.public_message());
 ///         let mut response = literal(failure.status(), "text/plain", body);
-///         for (name, value) in failure.headers() {
-///             response.headers_mut().insert(name.clone(), value.clone());
-///         }
+///         let headers: HeaderMap = failure.headers().iter().cloned().collect();
+///         response.headers_mut().extend(headers);
 ///         response
 ///     }
 /// }
@@ -38,7 +37,11 @@ pub trait ErrorRenderer: Send + Sync + 'static {
     /// Renders a failure. Must not fail and must not panic.
     ///
     /// Read the message through [`Failure::public_message`], so a 5xx stays
-    /// sanitized, and copy [`Failure::headers`] onto the response.
+    /// sanitized, and copy [`Failure::headers`] onto the response. Collecting
+    /// them into a [`HeaderMap`](crate::http::HeaderMap) and extending the
+    /// response with it, as the example does, lets each name replace the
+    /// renderer's own value while a repeated name such as `set-cookie` keeps
+    /// every value.
     fn render(&self, failure: &Failure) -> HttpResponse;
 }
 

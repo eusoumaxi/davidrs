@@ -114,7 +114,8 @@ impl Reply {
 /// # Errors
 ///
 /// Returns the `400` reply (`-32700` or `-32600`) for a body that is not one
-/// request or notification.
+/// request or notification. An `id` of `null` is such a body: MCP forbids it
+/// in a request, and a notification has no `id` member at all.
 pub(super) fn parse(body: &[u8]) -> Result<Message, Reply> {
     let invalid = |id, message: &str| {
         Reply::error(StatusCode::BAD_REQUEST, id, INVALID_REQUEST, message, None)
@@ -131,7 +132,7 @@ pub(super) fn parse(body: &[u8]) -> Result<Message, Reply> {
     let Value::Object(mut object) = value else {
         return Err(invalid(None, "A single JSON-RPC message is required"));
     };
-    let id = object.remove("id").filter(|id| !id.is_null());
+    let id = object.remove("id");
     if id
         .as_ref()
         .is_some_and(|id| !(id.is_string() || id.is_number()))

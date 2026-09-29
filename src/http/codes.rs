@@ -16,7 +16,7 @@
 //! [`Failure`](super::Failure) and owns the wire:
 //!
 //! ```
-//! use davidrs::http::{codes, literal, ErrorRenderer, Failure, HttpResponse};
+//! use davidrs::http::{codes, literal, ErrorRenderer, Failure, HeaderMap, HttpResponse};
 //!
 //! struct Snake;
 //!
@@ -29,9 +29,8 @@
 //!         };
 //!         let body = serde_json::json!({"code": code}).to_string();
 //!         let mut response = literal(failure.status(), "application/json", body);
-//!         for (name, value) in failure.headers() {
-//!             response.headers_mut().insert(name.clone(), value.clone());
-//!         }
+//!         let headers: HeaderMap = failure.headers().iter().cloned().collect();
+//!         response.headers_mut().extend(headers);
 //!         response
 //!     }
 //! }

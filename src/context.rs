@@ -14,7 +14,8 @@ pub struct Invocation {
     pub request_id: String,
     /// The raw `X-Amzn-Trace-Id` header, when the platform supplied one.
     pub trace_id: Option<String>,
-    /// The invoked function ARN, when available.
+    /// The invoked function ARN, when available; `None` when the runtime
+    /// sent something that is not an ARN, as local emulators do.
     pub invoked_arn: Option<String>,
     /// The tenant Lambda isolates this invocation for, on a function that
     /// uses tenant isolation mode; `None` otherwise.

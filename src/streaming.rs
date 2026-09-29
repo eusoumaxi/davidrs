@@ -79,6 +79,9 @@ impl Producer {
 
     /// Sends a failure, ending the stream. Returns `false` when the consumer
     /// has gone away.
+    ///
+    /// Nothing sent afterwards reaches the consumer. Once the consumer reads
+    /// the failure, the producer is cancelled as if the body had been dropped.
     pub async fn fail(&self, error: RuntimeError) -> bool {
         self.sender.send(Err(error)).await.is_ok()
     }
@@ -211,6 +214,9 @@ impl StreamBody {
 /// Yields each chunk, then one error item if the producer failed, panicked or
 /// ran out of budget.
 ///
+/// An error item is always the last: reading one cancels the producer, so a
+/// chunk sent after [`Producer::fail`] or a later deadline cannot follow it.
+///
 /// A closed channel alone does not end the stream: the producer's task is
 /// checked first, so a panic is not mistaken for a complete stream.
 impl futures_util::Stream for StreamBody {
@@ -224,7 +230,13 @@ impl futures_util::Stream for StreamBody {
             return Poll::Ready(None);
         }
         match self.receiver.poll_recv(context) {
-            Poll::Ready(Some(chunk)) => Poll::Ready(Some(chunk)),
+            Poll::Ready(Some(Ok(chunk))) => Poll::Ready(Some(Ok(chunk))),
+            Poll::Ready(Some(Err(error))) => {
+                self.finished = true;
+                self.cancel.cancel();
+                self.receiver.close();
+                Poll::Ready(Some(Err(error)))
+            }
             Poll::Ready(None) => {
                 let result = match self.producer.as_mut() {
                     Some(handle) => match Pin::new(handle).poll(context) {
