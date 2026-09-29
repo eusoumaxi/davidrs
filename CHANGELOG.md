@@ -9,6 +9,11 @@ version may change the public API, and its entry says how.
 
 ### Fixed
 
+- An OpenAPI call no longer emits two `Authorization` field lines when both
+  `OpenApi::forward_caller_token` and a configured `authorization` header are
+  set: the configured header wins, matching the precedence already given to
+  configured headers over argument-derived ones (`Authorization` is a
+  singleton field, RFC 9110 §11.6.2).
 - The HTTP pipeline's 4xx failure log records `kind` (the step that failed)
   instead of the HTTP status, matching the 5xx branch and the docstring, so
   two same-code 4xx failures from different steps stay distinguishable in
