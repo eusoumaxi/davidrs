@@ -170,6 +170,11 @@ impl OpenApi {
     /// server, this server's resource among its audiences. Anywhere else a
     /// forwarded token is a confused deputy: the API would act on a token
     /// that was never issued for it.
+    ///
+    /// If a configured [`OpenApi::header`] named `authorization` is also
+    /// set, that header wins and the caller's token is not forwarded:
+    /// `Authorization` is a singleton field (RFC 9110 §11.6.2), so the
+    /// two cannot both travel on one request.
     #[must_use]
     pub fn forward_caller_token(mut self) -> Self {
         self.forward_caller_token = true;
@@ -180,6 +185,11 @@ impl OpenApi {
     /// holds for the API, such as a service key.
     ///
     /// The value is marked sensitive, so it never appears in `Debug` output.
+    ///
+    /// A header named `authorization` takes precedence over
+    /// [`OpenApi::forward_caller_token`]: when both are set, only the
+    /// configured header is sent. `Authorization` is a singleton field
+    /// (RFC 9110 §11.6.2), so the two cannot both travel on one request.
     #[must_use]
     pub fn header(mut self, name: HeaderName, mut value: HeaderValue) -> Self {
         value.set_sensitive(true);
@@ -728,13 +738,15 @@ async fn forward(
         .http
         .request(operation.method.clone(), url)
         .header(header::ACCEPT, "application/json");
-    if let Some(authorization) = authorization.filter(|_| upstream.forward_caller_token) {
+    let configured = |name: &HeaderName| upstream.headers.iter().any(|(fixed, _)| fixed == name);
+    if !configured(&header::AUTHORIZATION)
+        && let Some(authorization) = authorization.filter(|_| upstream.forward_caller_token)
+    {
         request = request.header(header::AUTHORIZATION, authorization);
     }
     for (name, value) in &upstream.headers {
         request = request.header(name, value);
     }
-    let configured = |name: &HeaderName| upstream.headers.iter().any(|(fixed, _)| fixed == name);
     for (name, value) in headers.into_iter().filter(|(name, _)| !configured(name)) {
         request = request.header(name, value);
     }
