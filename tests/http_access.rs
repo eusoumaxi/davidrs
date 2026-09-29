@@ -849,7 +849,7 @@ mod bearer {
         let (jwks, verifier) = verifier().await;
         let before = jwks.fetches();
         let policy = Access::new(user).verify_bearer(verifier);
-        for header in ["Basic", "Digest", "Signed", "Negotiate"] {
+        for header in ["Basic", "Digest", "Signed", "Negotiate", "NTLM", "HOBA"] {
             let grant = authorize(&policy, &http_api(None, json!({ "authorization": header })))
                 .await
                 .expect("grant");

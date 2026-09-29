@@ -819,6 +819,10 @@ fn refusal(definition: ErrorDefinition) -> Failure {
 /// The caller token in an `Authorization` value: `Bearer <token>` or a bare
 /// token. Any other scheme, or the `Bearer` scheme with no token, is not a
 /// caller token.
+///
+/// A single word is a bare token only when it has the dots of a compact JWT.
+/// Without them it is a scheme name sent with no credentials, such as `Basic`,
+/// `Negotiate` or `Bearer`, and not a caller token either.
 fn bearer_token(value: &str) -> Option<&str> {
     let value = value.trim();
     match value.split_once(char::is_whitespace) {
@@ -826,24 +830,6 @@ fn bearer_token(value: &str) -> Option<&str> {
             Some(token.trim()).filter(|token| !token.is_empty())
         }
         Some(_) => None,
-        None if value.eq_ignore_ascii_case("bearer") => None,
-        None if is_known_auth_scheme(value) => None,
-        None => Some(value).filter(|token| !token.is_empty()),
+        None => Some(value).filter(|token| token.contains('.')),
     }
-}
-
-/// The HTTP authentication scheme names a stray `Authorization` header is
-/// realistically emitted as: `Basic`, `Digest`, `Negotiate` (NTLM/SPNEGO)
-/// and `Signed` (the OAuth custom-scheme family used by this codebase).
-const KNOWN_AUTH_SCHEMES: [&str; 4] = ["basic", "digest", "negotiate", "signed"];
-
-/// Whether `value` is a known HTTP authentication scheme name with no
-/// credentials, as in `Authorization: Basic`. Such a bareword is not a caller
-/// token: a genuine bare token carries a compact JWT, whose `.` parts would
-/// be lost to a scheme-name-only value. Returning `None` leaves the request
-/// anonymous, matching the `Bearer`-with-no-token arm above.
-fn is_known_auth_scheme(value: &str) -> bool {
-    KNOWN_AUTH_SCHEMES
-        .iter()
-        .any(|scheme| value.eq_ignore_ascii_case(scheme))
 }
