@@ -66,6 +66,30 @@ fn an_exclusion_removes_from_what_is_kept() {
 }
 
 #[test]
+fn an_exclusion_outside_what_is_kept_adds_nothing() {
+    let mask = Mask::parse(Some("status,-customer.notes"));
+    assert!(!mask.wants("customer"));
+    let mut order = json!({
+        "status": "open",
+        "customer": { "name": "Ada", "notes": "call first" }
+    });
+    mask.apply(&mut order);
+    assert_eq!(order, json!({ "status": "open" }));
+}
+
+#[test]
+fn an_excluded_path_removes_the_paths_named_below_it() {
+    let mask = Mask::parse(Some("status,customer.name.first,-customer.name"));
+    assert!(!mask.wants("customer"));
+    let mut order = json!({
+        "status": "open",
+        "customer": { "name": { "first": "Ada" }, "email": "ada@example.com" }
+    });
+    mask.apply(&mut order);
+    assert_eq!(order, json!({ "status": "open" }));
+}
+
+#[test]
 fn absent_or_empty_fields_keep_everything() {
     for fields in [None, Some(""), Some(" , ,"), Some("-")] {
         let mask = Mask::parse(fields);
@@ -162,6 +186,14 @@ fn stored_is_none_when_everything_is_wanted() {
     assert_eq!(
         Mask::parse(Some("id,total,customer,notes")).stored(FIELDS, &[]),
         None
+    );
+}
+
+#[test]
+fn stored_skips_a_field_that_only_leads_to_an_exclusion() {
+    assert_eq!(
+        Mask::parse(Some("total,-notes.private")).stored(FIELDS, &["id"]),
+        Some(vec!["id", "total_cents"])
     );
 }
 

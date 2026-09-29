@@ -76,7 +76,9 @@ impl Policy for Public {
 /// that should refuse a request before any parsing.
 ///
 /// It returns the headers to add to the response, so a rate limiter reports
-/// its budget on a success as well as on a refusal.
+/// its budget on a success as well as on a refusal. Each name replaces the
+/// handler's header of the same name; a name returned more than once, such as
+/// `set-cookie`, keeps every value.
 pub trait Admission: Send + Sync + 'static {
     /// Admits the request with headers for the response, or refuses it.
     ///

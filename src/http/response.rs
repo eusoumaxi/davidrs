@@ -108,9 +108,11 @@ impl<T: IntoResponse> IntoResponse for Option<T> {
     }
 }
 
-/// Sets each header on the response, replacing any with the same name.
+/// Sets the headers on the response.
+///
+/// Each name replaces what the response already holds under it, and a name
+/// listed more than once, such as `set-cookie`, keeps every value.
 pub(crate) fn apply_headers(response: &mut HttpResponse, headers: &[(HeaderName, HeaderValue)]) {
-    for (name, value) in headers {
-        response.headers_mut().insert(name.clone(), value.clone());
-    }
+    let headers: HeaderMap = headers.iter().cloned().collect();
+    response.headers_mut().extend(headers);
 }
