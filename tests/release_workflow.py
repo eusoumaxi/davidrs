@@ -33,7 +33,10 @@ class ReleasePreparation(unittest.TestCase):
         self.git('config', 'user.name', 'Release test')
         self.git('config', 'user.email', 'release@example.com')
         self.git('remote', 'add', 'origin', str(self.root / 'remote.git'))
-        for name in ('scripts/prepare-release.sh', 'scripts/check.sh', '.githooks/commit-msg'):
+        for name in (
+            'scripts/prepare-release.sh', 'scripts/check.sh', '.githooks/commit-msg',
+            'release-plz.toml',
+        ):
             target = self.repo / name
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(PROJECT / name, target)
@@ -58,10 +61,21 @@ else:
     sys.exit('Unexpected Cargo command')
 ''')
         self.executable('release-plz', '''#!/usr/bin/env python3
+import re, sys
 from pathlib import Path
-for name in ('Cargo.toml', 'Cargo.lock', 'CHANGELOG.md'):
+body = re.search(r'body = """(.*?)"""', Path('release-plz.toml').read_text(), re.S)
+if body is None:
+    sys.exit('release-plz.toml sets no changelog body')
+heading = re.sub(r'[{][{]\\s*version\\s*[}][}]', '0.1.1', body[1])
+heading = re.sub(r'[{][{]\\s*timestamp[^}]*[}][}]', '2026-09-28', heading)
+if '{' in heading:
+    sys.exit('this stand-in renders only the version and the date')
+for name in ('Cargo.toml', 'Cargo.lock'):
     file = Path(name)
     file.write_text(file.read_text().replace('0.1.0', '0.1.1'))
+changelog = Path('CHANGELOG.md')
+header, entries = changelog.read_text().split('## [Unreleased]\\n', 1)
+changelog.write_text(header + '## [Unreleased]\\n' + heading + entries)
 ''')
 
     def git(self, *args):
@@ -78,7 +92,10 @@ for name in ('Cargo.toml', 'Cargo.lock', 'CHANGELOG.md'):
     def write_version(self, version):
         (self.repo / 'Cargo.toml').write_text('[package]\nversion = "' + version + '"\n')
         (self.repo / 'Cargo.lock').write_text('version = "' + version + '"\n')
-        (self.repo / 'CHANGELOG.md').write_text('## [' + version + '] - 2026-09-27\n')
+        (self.repo / 'CHANGELOG.md').write_text(
+            '# Changelog\n\n## [Unreleased]\n\n### Fixed\n\n- An entry.\n\n'
+            '## [' + version + '] - 2026-09-27\n'
+        )
 
     def commit(self, message, push=False):
         self.git('add', '.')

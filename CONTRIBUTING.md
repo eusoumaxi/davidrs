@@ -122,11 +122,14 @@ changes to `src/`, `Cargo.toml`, `Cargo.lock`, `build.rs` or
 `rust-toolchain.toml` since the latest release trigger an automatic release.
 Documentation, tests, skills and workflow changes alone do not publish a crate.
 [Release-plz](https://release-plz.dev) compares the package with crates.io,
-updates the version and changelog, and checks API compatibility with
-`cargo-semver-checks`. Compatible changes normally increment the patch version;
-breaking changes increment the minor version before 1.0. Mark behavioural
-breaking changes with `!` or a `BREAKING CHANGE` footer too, because API checks
-cannot detect every compatibility change.
+updates the version, and checks API compatibility with `cargo-semver-checks`.
+It writes no changelog entries: it adds the heading `## [X.Y.Z] - YYYY-MM-DD`
+below `## [Unreleased]`, so the entries written there become the new
+version's section and its release notes (`release-plz.toml`). Compatible
+changes normally increment the patch version; breaking changes increment the
+minor version before 1.0. Mark behavioural breaking changes with `!` or a
+`BREAKING CHANGE` footer too, because API checks cannot detect every
+compatibility change.
 
 The workflow commits release metadata on a `chore/release-<version>` branch,
 advances `main` without rewriting history, publishes with Trusted Publishing,
