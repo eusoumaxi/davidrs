@@ -819,6 +819,10 @@ fn refusal(definition: ErrorDefinition) -> Failure {
 /// The caller token in an `Authorization` value: `Bearer <token>` or a bare
 /// token. Any other scheme, or the `Bearer` scheme with no token, is not a
 /// caller token.
+///
+/// A single word is a bare token only when it has the dots of a compact JWT.
+/// Without them it is a scheme name sent with no credentials, such as `Basic`,
+/// `Negotiate` or `Bearer`, and not a caller token either.
 fn bearer_token(value: &str) -> Option<&str> {
     let value = value.trim();
     match value.split_once(char::is_whitespace) {
@@ -826,7 +830,6 @@ fn bearer_token(value: &str) -> Option<&str> {
             Some(token.trim()).filter(|token| !token.is_empty())
         }
         Some(_) => None,
-        None if value.eq_ignore_ascii_case("bearer") => None,
-        None => Some(value).filter(|token| !token.is_empty()),
+        None => Some(value).filter(|token| token.contains('.')),
     }
 }

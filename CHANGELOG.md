@@ -9,6 +9,10 @@ version may change the public API, and its entry says how.
 
 ### Fixed
 
+- A scheme name sent alone in `Authorization`, such as `Basic` or `NTLM`
+  with no credentials, leaves the request anonymous on a route that
+  verifies bearer tokens, instead of being refused with
+  `ERROR_INVALID_TOKEN`.
 - An OpenAPI call no longer emits two `Authorization` field lines when both
   `OpenApi::forward_caller_token` and a configured `authorization` header are
   set: the configured header wins, matching the precedence already given to

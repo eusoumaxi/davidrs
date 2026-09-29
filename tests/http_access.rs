@@ -845,6 +845,23 @@ mod bearer {
     }
 
     #[tokio::test]
+    async fn a_scheme_name_alone_is_not_a_caller_token() {
+        let (jwks, verifier) = verifier().await;
+        let before = jwks.fetches();
+        let policy = Access::new(user).verify_bearer(verifier);
+        for header in ["Basic", "Digest", "Signed", "Negotiate", "NTLM", "HOBA"] {
+            let grant = authorize(&policy, &http_api(None, json!({ "authorization": header })))
+                .await
+                .expect("grant");
+            assert!(
+                grant.caller().is_none(),
+                "{header:?} alone leaves the request anonymous"
+            );
+        }
+        assert_eq!(jwks.fetches(), before, "nothing was verified");
+    }
+
+    #[tokio::test]
     async fn gateway_claims_win_over_a_bearer_token() {
         let (_jwks, verifier) = verifier().await;
         let request = signed_in(
