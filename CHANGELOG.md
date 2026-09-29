@@ -7,6 +7,8 @@ version may change the public API, and its entry says how.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-09-29
+
 ### Changed
 
 - The README now starts with installation, a complete HTTP function and
