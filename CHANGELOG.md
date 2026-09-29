@@ -22,6 +22,10 @@ version may change the public API, and its entry says how.
   instead of the HTTP status, matching the 5xx branch and the docstring, so
   two same-code 4xx failures from different steps stay distinguishable in
   DEBUG logs.
+- On an Application Load Balancer with multi-value headers, `source_ip`
+  reads the last `X-Forwarded-For` value, the one the load balancer
+  appends, instead of the first line, which a client can choose to pick
+  its own rate-limit key.
 
 ## [0.1.1](https://github.com/eusoumaxi/davidrs/compare/v0.1.0...v0.1.1) - 2026-09-29
 
