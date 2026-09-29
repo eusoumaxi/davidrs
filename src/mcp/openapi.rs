@@ -24,10 +24,12 @@
 //!   (path-level ones included) and the properties of a JSON body. A body
 //!   that is not an object, or whose properties share a name with a
 //!   parameter, is one `body` argument instead. Local `$ref`s are inlined, so
-//!   every schema stands alone. An operation whose body is not JSON is not a
-//!   tool. Cookie parameters and the headers the transport sets itself
-//!   (`Accept`, `Content-Type`, `Authorization`, `Host`, `Content-Length`,
-//!   `Transfer-Encoding`) are never arguments.
+//!   every schema stands alone, with the keywords beside a `$ref` applying
+//!   together with its target. An operation whose body is not JSON is not a
+//!   tool. A `null` argument counts as absent, except a field of a flattened
+//!   body, which is sent as `null`. Cookie parameters and the headers the
+//!   transport sets itself (`Accept`, `Content-Type`, `Authorization`,
+//!   `Host`, `Content-Length`, `Transfer-Encoding`) are never arguments.
 //! - **URL**: the base URL followed by the path, with path values
 //!   percent-encoded and query values encoded as `name=value` pairs. A call
 //!   therefore always reaches the base URL's own host; a document whose path
@@ -524,8 +526,10 @@ fn tool_name(operation_id: &str) -> Option<String> {
 
 /// `node` with every local `$ref` replaced by its target.
 ///
-/// A reference already being inlined (a cycle), one that points nowhere, and
-/// every reference past the budget stay as they are.
+/// Keywords beside a `$ref` apply alongside its target, as OpenAPI 3.1 and
+/// JSON Schema 2020-12 define; [`beside`] joins them. A reference already
+/// being inlined (a cycle), one that points nowhere, and every reference past
+/// the budget stay as they are.
 fn inline(node: &Value, document: &Value, seen: &mut Vec<String>, budget: &mut usize) -> Value {
     if *budget == 0 {
         return node.clone();
@@ -548,7 +552,14 @@ fn inline(node: &Value, document: &Value, seen: &mut Vec<String>, budget: &mut u
                         seen.push(reference.to_owned());
                         let resolved = inline(target, document, seen, budget);
                         seen.pop();
-                        resolved
+                        let keywords = object
+                            .iter()
+                            .filter(|(key, _)| key.as_str() != "$ref")
+                            .map(|(key, value)| {
+                                (key.clone(), inline(value, document, seen, budget))
+                            })
+                            .collect();
+                        beside(resolved, keywords)
                     }
                     _ => node.clone(),
                 };
@@ -564,14 +575,110 @@ fn inline(node: &Value, document: &Value, seen: &mut Vec<String>, budget: &mut u
     }
 }
 
+/// Keywords that describe a schema without constraining it. Beside a `$ref`
+/// they describe this use of the target, so they replace the target's own.
+const ANNOTATIONS: [&str; 11] = [
+    "title",
+    "summary",
+    "description",
+    "default",
+    "example",
+    "examples",
+    "deprecated",
+    "readOnly",
+    "writeOnly",
+    "externalDocs",
+    "$comment",
+];
+
+/// `target` with the `keywords` that sat beside its `$ref`, so that both hold.
+///
+/// A keyword the target lacks is added and an annotation replaces the
+/// target's. `required` lists and `allOf` lists are joined, and `properties`
+/// are merged, a property both declare differently becoming the `allOf` of
+/// the two. Any other keyword the target sets differently is added under
+/// `allOf`, so neither constraint is lost: `maximum: 10` beside a target with
+/// `maximum: 100` keeps both. A target that is not an object, such as a
+/// boolean schema, goes under `allOf` beside the keywords.
+fn beside(target: Value, keywords: Map<String, Value>) -> Value {
+    if keywords.is_empty() {
+        return target;
+    }
+    let Value::Object(mut schema) = target else {
+        let mut schema = keywords;
+        all_of(&mut schema, vec![target]);
+        return Value::Object(schema);
+    };
+    let mut apart = Vec::new();
+    for (key, value) in keywords {
+        let Some(own) = schema.get_mut(&key) else {
+            schema.insert(key, value);
+            continue;
+        };
+        match (own, value) {
+            (own, value) if *own == value => {}
+            (own, value) if ANNOTATIONS.contains(&key.as_str()) => *own = value,
+            (Value::Array(own), Value::Array(more)) if key == "required" => {
+                for name in more {
+                    if !own.contains(&name) {
+                        own.push(name);
+                    }
+                }
+            }
+            (Value::Array(own), Value::Array(more)) if key == "allOf" => own.extend(more),
+            (Value::Object(own), Value::Object(more)) if key == "properties" => {
+                for (name, property) in more {
+                    match own.get_mut(&name) {
+                        Some(existing) if *existing != property => {
+                            *existing = json!({ "allOf": [existing.take(), property] });
+                        }
+                        Some(_) => {}
+                        None => {
+                            own.insert(name, property);
+                        }
+                    }
+                }
+            }
+            (_, value) => {
+                let mut keyword = Map::new();
+                keyword.insert(key, value);
+                apart.push(Value::Object(keyword));
+            }
+        }
+    }
+    all_of(&mut schema, apart);
+    Value::Object(schema)
+}
+
+/// Appends `schemas` to the `allOf` of `schema`.
+fn all_of(schema: &mut Map<String, Value>, schemas: Vec<Value>) {
+    if schemas.is_empty() {
+        return;
+    }
+    match schema.entry("allOf").or_insert_with(|| json!([])) {
+        Value::Array(items) => items.extend(schemas),
+        other => {
+            let own = other.take();
+            *other = Value::Array(std::iter::once(own).chain(schemas).collect());
+        }
+    }
+}
+
 /// One call: the arguments as a request, the API's answer as a value.
+///
+/// A `null` argument is a missing one, except for a field of a flattened JSON
+/// body: there `null` is a value the API reads, as JSON Merge Patch (RFC 7396)
+/// reads it as removing the field, so it is sent.
 async fn forward(
     operation: Arc<Operation>,
     upstream: Arc<Upstream>,
     mut arguments: Map<String, Value>,
     authorization: Option<String>,
 ) -> Result<Value, Failure> {
-    arguments.retain(|_, value| !value.is_null());
+    let is_parameter = |name: &String| operation.parameters.iter().any(|p| p.name == *name);
+    arguments.retain(|name, value| {
+        !value.is_null() || (operation.body == Body::Fields && !is_parameter(name))
+    });
     let missing: Vec<&str> = operation
         .required
         .iter()

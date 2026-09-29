@@ -15,6 +15,6 @@
 <!-- Tick one. See CONTRIBUTING.md, "AI-assisted contributions". -->
 
 - [ ] No AI assistant wrote any part of this change.
-- [ ] An AI assistant helped. I have read and understood every line, I answer for it, and the commits carry a trailer naming the assistant.
+- [ ] An AI assistant helped. I have read and understood every line, I answer for it, and the commits are in my name.
 
 Assistant and what it did:

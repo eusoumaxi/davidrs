@@ -333,6 +333,76 @@ async fn a_recursive_schema_keeps_its_reference_where_it_repeats() {
     );
 }
 
+/// The tools of a document whose one operation, `POST /counts`, takes
+/// `schema` as its `count` parameter and `body` as its JSON body.
+async fn tools_for(schema: Value, body: Option<Value>, components: Value) -> Vec<Value> {
+    let mut operation = json!({
+        "operationId": "count",
+        "parameters": [{ "name": "count", "in": "query", "schema": schema }]
+    });
+    if let Some(body) = body {
+        operation["requestBody"] = json!({ "content": { "application/json": { "schema": body } } });
+    }
+    let document = json!({
+        "openapi": "3.1.0",
+        "paths": { "/counts": { "post": operation } },
+        "components": components
+    });
+    let api = OpenApi::new(&document, "https://api.example.com", http()).expect("document");
+    tools(&mcp(api)).await
+}
+
+/// JSON Schema 2020-12 applies keywords beside a `$ref` together with its
+/// target: a tighter bound beside the reference still binds.
+#[tokio::test]
+async fn keywords_beside_a_reference_apply_with_its_target() {
+    let tools = tools_for(
+        json!({
+            "$ref": "#/components/schemas/Count",
+            "minimum": 1,
+            "maximum": 10,
+            "description": "How many to read"
+        }),
+        None,
+        json!({ "schemas": { "Count": {
+            "type": "integer", "maximum": 100, "description": "A count"
+        } } }),
+    )
+    .await;
+    assert_eq!(
+        tools[0]["inputSchema"]["properties"]["count"],
+        json!({
+            "type": "integer",
+            "maximum": 100,
+            "description": "How many to read",
+            "minimum": 1,
+            "allOf": [{ "maximum": 10 }]
+        })
+    );
+}
+
+#[tokio::test]
+async fn a_body_that_extends_a_referenced_schema_keeps_both_sets_of_fields() {
+    let tools = tools_for(
+        json!({ "type": "integer" }),
+        Some(json!({
+            "$ref": "#/components/schemas/Item",
+            "required": ["note"],
+            "properties": { "note": { "type": "string" } }
+        })),
+        json!({ "schemas": { "Item": {
+            "type": "object",
+            "required": ["name"],
+            "properties": { "name": { "type": "string" } }
+        } } }),
+    )
+    .await;
+    let schema = &tools[0]["inputSchema"];
+    assert_eq!(schema["properties"]["name"], json!({ "type": "string" }));
+    assert_eq!(schema["properties"]["note"], json!({ "type": "string" }));
+    assert_eq!(schema["required"], json!(["name", "note"]));
+}
+
 /// One operation may inline only so much: past the budget, references are
 /// left for the client to resolve.
 #[tokio::test]
@@ -424,6 +494,19 @@ async fn a_flattened_body_is_sent_as_one_json_object() {
     assert_eq!(sent.header("content-type"), Some("application/json"));
     let body: Value = serde_json::from_slice(&sent.body).expect("JSON");
     assert_eq!(body, json!({ "item": "pen", "quantity": 2 }));
+}
+
+/// JSON Merge Patch reads a `null` field as removing it, so the API must
+/// receive it rather than an object without the field.
+#[tokio::test]
+async fn a_null_body_field_is_sent_as_null() {
+    let upstream = upstream(201, "application/json", "{}").await;
+    let server = mcp(api(&upstream.url("")));
+    let arguments = json!({ "item": "pen", "quantity": null, "X-Tenant": "t1" });
+    let result = call(&server, "create_order_", arguments).await;
+    assert!(!text(&result).1);
+    let body: Value = serde_json::from_slice(&only(&upstream).body).expect("JSON");
+    assert_eq!(body, json!({ "item": "pen", "quantity": null }));
 }
 
 #[tokio::test]

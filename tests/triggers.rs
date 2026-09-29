@@ -85,6 +85,14 @@ fn an_empty_arn_or_tenant_is_none() {
     assert_eq!(invocation.tenant_id, None);
 }
 
+/// `cargo lambda watch` sends this placeholder on every invocation.
+#[test]
+fn a_local_emulators_placeholder_arn_is_none() {
+    let mut native = context(now_ms() + 30_000);
+    native.invoked_function_arn = "function-arn".to_owned();
+    assert_eq!(invocation_from(&native).invoked_arn, None);
+}
+
 #[cfg(feature = "event")]
 mod event {
     use davidrs::event::Event;
