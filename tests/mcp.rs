@@ -359,6 +359,18 @@ async fn a_body_that_is_not_one_request_is_an_invalid_request() {
     }
 }
 
+/// MCP forbids a `null` request id, and only a message without an `id` is a
+/// notification, so the message is refused instead of accepted unanswered.
+#[tokio::test]
+async fn an_id_of_null_is_an_invalid_request_not_a_notification() {
+    let mut message = body_of("ping", json!({}));
+    message["id"] = Value::Null;
+    let (status, _, body) = send(&server(), post(mirrored("ping", None), &message)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], -32600);
+    assert!(body.get("id").is_none());
+}
+
 /// The header names the revision, but the metadata the body must carry is
 /// incomplete.
 #[tokio::test]
@@ -593,6 +605,39 @@ async fn the_admission_counts_every_request_and_its_refusal_keeps_its_headers() 
     let (status, answered, _) = send(&server, request("ping", json!({}))).await;
     assert_eq!(status, StatusCode::OK);
     assert!(answered.contains_key("ratelimit"));
+}
+
+/// Refuses every request and clears two cookies, the way a sign-out behind a
+/// rate limit would.
+struct SignOut;
+
+impl Admission for SignOut {
+    async fn check(
+        &self,
+        _: &Request<'_>,
+        _: &Invocation,
+    ) -> Result<Vec<(String, String)>, Failure> {
+        Err(Failure::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "ERROR_RATE_LIMITED",
+            "Slow down",
+        )
+        .with_header("set-cookie", "session=; Max-Age=0")
+        .with_header("set-cookie", "tenant=; Max-Age=0"))
+    }
+}
+
+#[tokio::test]
+async fn a_refusal_keeps_every_value_of_a_repeated_header() {
+    let server = server().admission(SignOut);
+    let (status, answered, _) = send(&server, request("ping", json!({}))).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    let cookies: Vec<&str> = answered
+        .get_all("set-cookie")
+        .iter()
+        .map(|value| value.to_str().expect("a text header"))
+        .collect();
+    assert_eq!(cookies, ["session=; Max-Age=0", "tenant=; Max-Age=0"]);
 }
 
 #[tokio::test]

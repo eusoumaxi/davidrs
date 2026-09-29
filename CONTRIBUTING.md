@@ -87,7 +87,7 @@ Commits follow [Conventional Commits 1.0](https://www.conventionalcommits.org/en
 - **scope**: optional; the module or area in lowercase: `http`, `queue`, `mcp`, `table`, `auth`, `deps`.
 - **description**: imperative mood, lowercase unless it starts with a name, no trailing period: `fix(queue): report unattempted records as failures`. The whole subject is at most 72 characters.
 - **body**: optional, after a blank line. Say what changes and why, wrapped at 72 characters.
-- **footers**: `BREAKING CHANGE: <what breaks and how to migrate>` for a breaking change (or `!` after the type or scope: `feat(http)!: …`), `Refs: #123`, and the AI trailer described below.
+- **footers**: `BREAKING CHANGE: <what breaks and how to migrate>` for a breaking change (or `!` after the type or scope: `feat(http)!: …`), and `Refs: #123`.
 
 Git's own `Merge`, `Revert`, `fixup!` and `squash!` subjects are accepted as they are; squash fixups before review. `scripts/check.sh commit-msg` checks a message, the hook runs it on every commit, and CI checks every commit and the title of every pull request.
 
@@ -106,7 +106,7 @@ A pull request needs the maintainer's review (`.github/CODEOWNERS`) and green ch
 AI coding assistants are welcome. Their output meets the same bar as anyone's, and a person answers for every line.
 
 - **A person owns every pull request.** The author has read and understood every line, can explain it in review, and has run `scripts/check.sh`. Pull requests opened by an agent with no human author are closed.
-- **Disclose it.** Tick the AI box in the pull request template and name the assistant. Each commit an assistant helped write carries a trailer naming it, such as `Co-authored-by: <assistant> <address>` or `Assisted-by: <assistant>`.
+- **Disclose it.** Tick the AI box in the pull request template and name the assistant there. Commits carry only the name of the person who authors them: no assistant author, co-author or trailer.
 - **Same rules.** Branch names, commit messages, rustdoc-only comments, neutral vocabulary and tests through the public API apply unchanged. Agents read them from [`AGENTS.md`](AGENTS.md).
 - **Small and deliberate.** One concern per pull request. No generated churn: mass reformatting, speculative abstractions, reworded documentation that says nothing new, or tests that assert what the code happens to do rather than what it should do.
 - **No invented facts.** Every API, flag, limit and link a change mentions must exist. Limits of AWS services cite the AWS documentation, as the guide does.

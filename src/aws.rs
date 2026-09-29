@@ -6,11 +6,17 @@
 //! compiled in. The TLS client can trust a caller-supplied root bundle instead
 //! of parsing the operating system's certificate store at startup.
 //!
+//! Like the SDK's own environment provider, the credentials are read from the
+//! environment each time the SDK resolves them, never kept from the first
+//! read, so a value that changes while the function is warm is used from the
+//! next resolution on.
+//!
 //! The [configuration chapter](crate::guide::aws_config) of the guide covers
 //! choosing the roots and running locally.
 
 use aws_credential_types::Credentials;
-use aws_credential_types::provider::SharedCredentialsProvider;
+use aws_credential_types::provider::error::CredentialsError;
+use aws_credential_types::provider::{self, ProvideCredentials, SharedCredentialsProvider};
 use aws_smithy_async::rt::sleep::{SharedAsyncSleep, TokioSleep};
 use aws_smithy_http_client::tls::rustls_provider::CryptoMode;
 use aws_smithy_http_client::tls::{Provider, TlsContext, TrustStore};
@@ -43,8 +49,9 @@ pub enum Trust<'a> {
 /// Builds SDK configuration from the environment Lambda injects.
 ///
 /// Reads `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` and the
-/// optional `AWS_SESSION_TOKEN`. Performs no network I/O. Call it once in
-/// `main` and build every service client from the result.
+/// optional `AWS_SESSION_TOKEN`. The credentials are checked now and read
+/// again whenever the SDK resolves them. Performs no network I/O. Call it
+/// once in `main` and build every service client from the result.
 ///
 /// The configuration carries a Tokio timer, which the SDK's retries, timeouts
 /// and stalled-stream protection need: without one, building a client
@@ -82,18 +89,49 @@ pub fn sdk_config(trust: Trust<'_>) -> Result<SdkConfig, RuntimeError> {
         .tls_provider(Provider::Rustls(CryptoMode::Ring))
         .tls_context(context)
         .build_https();
-    let credentials = Credentials::new(
-        required_env("AWS_ACCESS_KEY_ID")?,
-        required_env("AWS_SECRET_ACCESS_KEY")?,
-        std::env::var("AWS_SESSION_TOKEN").ok(),
-        None,
-        "lambda-env",
-    );
+    required_env("AWS_ACCESS_KEY_ID")?;
+    required_env("AWS_SECRET_ACCESS_KEY")?;
     Ok(SdkConfig::builder()
         .behavior_version(BehaviorVersion::latest())
         .region(Region::new(required_env("AWS_REGION")?))
-        .credentials_provider(SharedCredentialsProvider::new(credentials))
+        .credentials_provider(SharedCredentialsProvider::new(EnvironmentCredentials))
         .http_client(http_client)
         .sleep_impl(SharedAsyncSleep::new(TokioSleep::new()))
         .build())
+}
+
+/// The role credentials Lambda puts in the environment, read at every
+/// resolution.
+///
+/// The SDK caches what this returns and asks again when its cache expires.
+#[derive(Debug)]
+struct EnvironmentCredentials;
+
+impl ProvideCredentials for EnvironmentCredentials {
+    fn provide_credentials<'a>(&'a self) -> provider::future::ProvideCredentials<'a>
+    where
+        Self: 'a,
+    {
+        provider::future::ProvideCredentials::ready(environment_credentials())
+    }
+}
+
+/// Reads the credentials from the environment.
+///
+/// # Errors
+///
+/// Returns [`CredentialsError`] naming a required variable that is absent.
+fn environment_credentials() -> provider::Result {
+    let required = |name: &str| {
+        std::env::var(name).map_err(|_| {
+            CredentialsError::invalid_configuration(format!("missing environment variable {name}"))
+        })
+    };
+    Ok(Credentials::new(
+        required("AWS_ACCESS_KEY_ID")?,
+        required("AWS_SECRET_ACCESS_KEY")?,
+        std::env::var("AWS_SESSION_TOKEN").ok(),
+        None,
+        "lambda-env",
+    ))
 }

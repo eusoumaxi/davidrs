@@ -153,6 +153,42 @@ async fn a_producer_failure_ends_the_stream_with_that_error() {
     assert!(body.next().await.is_none());
 }
 
+#[tokio::test]
+async fn nothing_a_producer_sends_after_its_failure_follows_it() {
+    let body = StreamBody::spawn(4, a_minute(), |producer| async move {
+        producer.send("partial").await;
+        producer
+            .fail(RuntimeError::message("upstream refused"))
+            .await;
+        producer.send("late").await;
+    });
+    let items = body.collect::<Vec<_>>().await;
+    assert_eq!(items.len(), 2);
+    let error = items[1].as_ref().expect_err("the failure");
+    assert_eq!(error.to_string(), "upstream refused");
+}
+
+/// Without the cancellation, a producer that hangs after failing would end
+/// the stream a second time when its deadline passed.
+#[tokio::test]
+async fn a_failure_cancels_the_producer() {
+    let (stopped, observed) = oneshot::channel();
+    let mut body = StreamBody::spawn(4, a_minute(), |producer| async move {
+        producer
+            .fail(RuntimeError::message("upstream refused"))
+            .await;
+        producer.cancelled().await;
+        let _ = stopped.send(producer.should_stop());
+    });
+    body.next().await.expect("item").expect_err("failure");
+    let stopped = tokio::time::timeout(Duration::from_secs(5), observed)
+        .await
+        .expect("the producer is cancelled")
+        .expect("the producer reports");
+    assert!(stopped);
+    assert!(body.next().await.is_none());
+}
+
 /// The panic message is not repeated: it may hold whatever the producer was
 /// working on.
 #[tokio::test]

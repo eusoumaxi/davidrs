@@ -72,6 +72,36 @@ pub(crate) struct KeyStore {
 /// one request per pause from each instance, not one per incoming token.
 const FAILURE_COOLDOWN: Duration = Duration::from_secs(5);
 
+/// One fetch in progress, recording its outcome in `failed_at`.
+///
+/// Dropped before [`Attempt::finish`] — the caller's future was cancelled —
+/// it records a failure.
+struct Attempt<'a>(Option<&'a RwLock<Option<Instant>>>);
+
+impl Attempt<'_> {
+    /// Records the finished fetch: the time of a failure, or no failure.
+    fn finish(mut self, failed: bool) {
+        if let Some(failed_at) = self.0.take() {
+            record(failed_at, failed.then(Instant::now));
+        }
+    }
+}
+
+impl Drop for Attempt<'_> {
+    fn drop(&mut self) {
+        if let Some(failed_at) = self.0.take() {
+            record(failed_at, Some(Instant::now()));
+        }
+    }
+}
+
+/// Stores when the last refresh failed, or that it did not.
+fn record(failed_at: &RwLock<Option<Instant>>, value: Option<Instant>) {
+    if let Ok(mut slot) = failed_at.write() {
+        *slot = value;
+    }
+}
+
 impl KeyStore {
     pub(crate) fn new(
         http: reqwest::Client,
@@ -156,19 +186,15 @@ impl KeyStore {
     /// Keeps at most [`MAX_KEYS`] RSA keys compatible with RS256 signature
     /// verification. Other algorithms, encryption keys and keys whose
     /// operations exclude verification are skipped.
+    ///
+    /// The outcome is recorded once the download ends. A fetch that is
+    /// cancelled before then counts as a failure, so abandoned refreshes
+    /// observe the cooldown too. While the download runs the previous outcome
+    /// stands, so a concurrent miss queues behind it instead of being refused.
     async fn fetch(&self) -> Result<(), RuntimeError> {
-        if let Ok(mut slot) = self.failed_at.write() {
-            *slot = Some(Instant::now());
-        }
+        let attempt = Attempt(Some(&self.failed_at));
         let outcome = self.download().await;
-        let failed_at = if outcome.is_err() {
-            Some(Instant::now())
-        } else {
-            None
-        };
-        if let Ok(mut slot) = self.failed_at.write() {
-            *slot = failed_at;
-        }
+        attempt.finish(outcome.is_err());
         outcome
     }
 

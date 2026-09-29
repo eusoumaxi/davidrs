@@ -114,6 +114,22 @@ impl Admission for Exhausted {
     }
 }
 
+/// Admits every request and sets two cookies.
+struct Cookies;
+
+impl Admission for Cookies {
+    async fn check(
+        &self,
+        _: &Request<'_>,
+        _: &Invocation,
+    ) -> Result<Vec<(String, String)>, Failure> {
+        Ok(vec![
+            ("Set-Cookie".to_owned(), "session=a".to_owned()),
+            ("Set-Cookie".to_owned(), "tenant=b".to_owned()),
+        ])
+    }
+}
+
 /// Never answers, so only the deadline can end the request.
 struct Stuck;
 
@@ -308,6 +324,22 @@ async fn admission_headers_reach_a_success_and_invalid_ones_are_dropped() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(response.headers()["ratelimit"], "\"default\";r=9;t=60");
     assert_eq!(response.headers().len(), 2, "content-type and ratelimit");
+}
+
+#[tokio::test]
+async fn an_admission_header_named_twice_keeps_both_values_on_a_success() {
+    let response = api()
+        .admission(Cookies)
+        .handle(
+            Arc::new(App::default()),
+            post(r#"{"name":"widget"}"#),
+            &decode_item,
+            &create,
+        )
+        .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let cookies: Vec<_> = response.headers().get_all("set-cookie").iter().collect();
+    assert_eq!(cookies, ["session=a", "tenant=b"]);
 }
 
 #[tokio::test]

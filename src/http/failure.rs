@@ -115,6 +115,9 @@ impl Failure {
 
     /// Adds a response header that survives rendering.
     ///
+    /// It replaces a header of the same name the renderer sets. Adding a name
+    /// again keeps every value, as `set-cookie` needs.
+    ///
     /// An invalid name or value is dropped rather than panicking: a malformed
     /// header must not turn a `429` into a crash.
     #[must_use]
