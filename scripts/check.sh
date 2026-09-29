@@ -185,8 +185,8 @@ release() {
   if [ "$1" != "v$current" ]; then
     fail "tag $1 does not match version $current in Cargo.toml"
   fi
-  if ! grep -Eq "^## \[${current//./\\.}\] - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md; then
-    fail "CHANGELOG.md has no '## [$current] - YYYY-MM-DD' section"
+  if ! grep -Eq "^## \[${current//./\\.}\](\(https://[^ )]+\))? - [0-9]{4}-[0-9]{2}-[0-9]{2}$" CHANGELOG.md; then
+    fail "CHANGELOG.md has no '## [$current](link) - YYYY-MM-DD' section"
   fi
   if ! git merge-base --is-ancestor HEAD origin/main; then
     fail "the commit tagged $1 is not on origin/main"
