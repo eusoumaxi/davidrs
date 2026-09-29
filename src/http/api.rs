@@ -243,7 +243,6 @@ where
         #[cfg(feature = "logs")]
         {
             let (code, kind) = (failure.code(), failure.kind());
-            let status = failure.status().as_u16();
             if failure.is_server_error() {
                 tracing::error!(
                     operation = self.operation,
@@ -257,7 +256,7 @@ where
                     operation = self.operation,
                     request_id = %invocation.request_id,
                     code,
-                    status,
+                    kind = ?kind,
                     "request refused"
                 );
             }

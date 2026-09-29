@@ -14,6 +14,13 @@ version may change the public API, and its entry says how.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
 
+### Fixed
+
+- The HTTP pipeline's 4xx failure log records `kind` (the step that failed)
+  instead of the HTTP status, matching the 5xx branch and the docstring, so
+  two same-code 4xx failures from different steps stay distinguishable in
+  DEBUG logs.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.

@@ -640,7 +640,7 @@ mod logs {
     use davidrs::Context;
     use davidrs::http::{Failure, Json, Request, StatusCode};
 
-    use super::{App, Item, api, decode_item, post};
+    use super::{App, Exhausted, Item, api, decode_item, post};
 
     /// Collects everything the subscriber writes.
     #[derive(Clone, Default)]
@@ -662,6 +662,18 @@ mod logs {
             StatusCode::INTERNAL_SERVER_ERROR,
             "FAULT_STORE",
             "connection refused to 10.0.4.17:5432",
+        ))
+    }
+
+    /// Refuses every request with the same `429 ERROR_BUSY` the admission
+    /// [`Exhausted`] returns, but defaults to `FailureKind::Handler`. Paired
+    /// with [`Exhausted`] in a log capture, it proves two same-code 4xx
+    /// failures from different steps stay distinguishable by `kind`.
+    async fn busy_handler(_: Arc<App>, _: Item, _: Context<()>) -> Result<Json<bool>, Failure> {
+        Err(Failure::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "ERROR_BUSY",
+            "Slow down",
         ))
     }
 
@@ -697,8 +709,84 @@ mod logs {
         let logs = String::from_utf8(captured.0.lock().expect("buffer").clone()).expect("UTF-8");
         assert!(logs.contains("request failed"), "{logs}");
         assert!(logs.contains("FAULT_STORE"), "{logs}");
+        assert!(logs.contains("kind=Handler"), "{logs}");
         assert!(logs.contains("request refused"), "{logs}");
         assert!(logs.contains("ERROR_MALFORMED_BODY"), "{logs}");
+        assert!(logs.contains("kind=Decode"), "{logs}");
         assert!(!logs.contains("10.0.4.17"), "{logs}");
+    }
+
+    /// Two 4xx failures that share a code and status but come from different
+    /// pipeline steps must stay distinguishable in the DEBUG log: `kind`
+    /// names the step that failed. Before the fix the 4xx branch logged
+    /// `status` and dropped `kind`, so an admission `429 ERROR_BUSY` and a
+    /// handler `429 ERROR_BUSY` rendered as byte-identical lines.
+    #[tokio::test]
+    async fn four_xx_log_lines_carry_kind_so_different_steps_are_distinct() {
+        let captured = Captured::default();
+        let writer = captured.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(move || writer.clone())
+            .finish();
+        let _guard = tracing::subscriber::set_default(subscriber);
+
+        // Admission refuses with a `429 ERROR_BUSY` before the body is
+        // decoded; the pipeline tags it `FailureKind::Admission`.
+        api()
+            .admission(Exhausted)
+            .handle(
+                Arc::new(App::default()),
+                post("not json"),
+                &decode_item,
+                &busy_handler,
+            )
+            .await;
+        // The handler refuses with the same `429 ERROR_BUSY`; it defaults to
+        // `FailureKind::Handler`.
+        api()
+            .handle(
+                Arc::new(App::default()),
+                post(r#"{"name":"widget"}"#),
+                &decode_item,
+                &busy_handler,
+            )
+            .await;
+
+        let logs = String::from_utf8(captured.0.lock().expect("buffer").clone()).expect("UTF-8");
+        let refused: Vec<&str> = logs
+            .lines()
+            .filter(|line| line.contains("request refused"))
+            .collect();
+        assert_eq!(refused.len(), 2, "expected two 4xx log lines, got: {logs}");
+
+        // The only field that can tell the two same-code 429s apart is
+        // `kind`; both lines must carry it, and it must differ between them.
+        let kinds: Vec<&str> = refused
+            .iter()
+            .map(|line| {
+                line.split_whitespace()
+                    .find(|field| field.starts_with("kind="))
+                    .expect("a 4xx log line carries kind=")
+            })
+            .collect();
+        assert!(
+            kinds.contains(&"kind=Admission"),
+            "admission kind missing: {logs}"
+        );
+        assert!(
+            kinds.contains(&"kind=Handler"),
+            "handler kind missing: {logs}"
+        );
+        assert_ne!(
+            kinds[0], kinds[1],
+            "two steps logged with the same kind: {logs}"
+        );
+
+        // The safe metadata contract still holds: the message is never logged.
+        assert!(
+            !logs.contains("Slow down"),
+            "message leaked into the log: {logs}"
+        );
     }
 }
