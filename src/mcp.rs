@@ -688,9 +688,8 @@ impl ErrorRenderer for RpcErrors {
             "error": { "code": code, "message": failure.public_message() }
         });
         let mut response = literal(failure.status(), "application/json", body.to_string());
-        for (name, value) in failure.headers() {
-            response.headers_mut().insert(name.clone(), value.clone());
-        }
+        let headers: HeaderMap = failure.headers().iter().cloned().collect();
+        response.headers_mut().extend(headers);
         if failure.status() == StatusCode::UNAUTHORIZED {
             let challenge = HeaderValue::try_from(self.challenge.as_str())
                 .unwrap_or(HeaderValue::from_static("Bearer"));

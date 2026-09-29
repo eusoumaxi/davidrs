@@ -23,7 +23,7 @@ use super::failure::{Failure, FailureKind};
 use super::policy::{Admission, AdmitAll, Policy};
 use super::render::ErrorRenderer;
 use super::request::{DEFAULT_BODY_LIMIT, Request};
-use super::response::{HttpResponse, IntoResponse};
+use super::response::{HttpResponse, IntoResponse, apply_headers};
 use crate::{Context, Deadline, Invocation, RuntimeError};
 
 /// Time kept back from Lambda's own timeout, so a rendered `504` still
@@ -226,14 +226,16 @@ where
             .and_then(std::convert::identity);
         let mut response =
             result.map_err(|failure| failure.with_headers(admission_headers.clone()))?;
-        for (name, value) in &admission_headers {
-            if let (Ok(name), Ok(value)) = (
-                HeaderName::try_from(name.as_str()),
-                HeaderValue::try_from(value.as_str()),
-            ) {
-                response.headers_mut().insert(name, value);
-            }
-        }
+        let admitted: Vec<(HeaderName, HeaderValue)> = admission_headers
+            .iter()
+            .filter_map(|(name, value)| {
+                Some((
+                    HeaderName::try_from(name.as_str()).ok()?,
+                    HeaderValue::try_from(value.as_str()).ok()?,
+                ))
+            })
+            .collect();
+        apply_headers(&mut response, &admitted);
         Ok(response)
     }
 

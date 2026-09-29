@@ -4,7 +4,8 @@
 //! `fields=a,b.c,d.e.f` keeps `a` whole, `b` reduced to its `c`, and `d`
 //! reduced to `e` reduced to `f`. A path with a leading `-` removes it from
 //! whatever is kept: `fields=a,-a.b.c` is `a` without `a.b.c`, and
-//! `fields=-notes` is everything but `notes`. Arrays are transparent: a path
+//! `fields=-notes` is everything but `notes`. An exclusion never adds
+//! anything: `fields=a,-b.c` is `a` alone. Arrays are transparent: a path
 //! into an array applies to every element, so `items.name` on a list keeps
 //! the name of each item and `order.lines.price` keeps the price of each
 //! line. A key the response does not have is simply absent; nothing is
@@ -130,7 +131,17 @@ impl Mask {
                 None => return whole,
             }
         }
-        !node.excluded
+        !node.excluded && (whole || node.keeps_any())
+    }
+
+    /// Whether this node keeps anything of its own accord: a path of the
+    /// request ends here or below, and no exclusion removes it.
+    ///
+    /// A node that only leads to an exclusion keeps nothing unless something
+    /// above it is kept whole, so it is neither wanted nor left in the
+    /// response as an empty object.
+    fn keeps_any(&self) -> bool {
+        !self.excluded && (self.whole || self.children.values().any(Self::keeps_any))
     }
 
     /// The mask below `name`, for a nested object the route builds itself.
@@ -205,7 +216,7 @@ impl Mask {
         match value {
             Value::Object(object) => {
                 object.retain(|name, _| match self.children.get(name) {
-                    Some(child) => !child.excluded,
+                    Some(child) => !child.excluded && (whole || child.keeps_any()),
                     None => whole,
                 });
                 for (name, child_value) in object.iter_mut() {
