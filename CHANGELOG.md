@@ -7,6 +7,17 @@ version may change the public API, and its entry says how.
 
 ## [Unreleased]
 
+## [0.1.1](https://github.com/eusoumaxi/davidrs/compare/v0.1.0...v0.1.1) - 2026-09-29
+
+### Fixed
+
+- resolve open bug reports #4 through #12
+
+### Other
+
+- *(mcp)* keep every value of a repeated header on a refusal
+- improve repository overview and getting started
+
 ### Changed
 
 - The README now starts with installation, a complete HTTP function and
