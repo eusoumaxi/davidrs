@@ -152,11 +152,6 @@ opentelemetry-aws = { version = "0.21", default-features = false, features = [
   "trace",
   "detector-aws-lambda",
 ], optional = true }
-opentelemetry-proto = { version = "0.33", default-features = false, features = [
-  "gen-tonic-messages",
-  "trace",
-], optional = true }
-prost = { version = "0.14", optional = true }
 tracing-opentelemetry = { version = "0.34", default-features = false, optional = true }
 
 [dev-dependencies]
@@ -278,10 +273,8 @@ otel = [
   "dep:opentelemetry",
   "dep:opentelemetry_sdk",
   "dep:opentelemetry-aws",
-  "dep:opentelemetry-proto",
-  "dep:prost",
   "dep:tracing-opentelemetry",
-  "dep:base64",
+  "dep:serde_json",
 ]
 test-support = ["dep:serde_json"]
 # An MCP server on the buffered pipeline, with hand-written tools. `base64`

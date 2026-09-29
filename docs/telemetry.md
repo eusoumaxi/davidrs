@@ -8,7 +8,7 @@ Call [`telemetry::init`](crate::telemetry::init) once, first in `main`, and hold
 | --- | --- | --- |
 | `logs` | [`init`](crate::telemetry::init), [`logs`](crate::telemetry::logs): a plain-text subscriber, invocation spans, timed startup | `tracing`, `tracing-subscriber` (fmt only) |
 | `metrics` | [`Metrics`](crate::telemetry::Metrics): CloudWatch Embedded Metric Format | `serde_json` |
-| `otel` | `logs` plus X-Ray traces sent to the sandbox's X-Ray agent | OpenTelemetry, the OTLP protobuf types |
+| `otel` | `logs` plus X-Ray traces sent to the sandbox's X-Ray agent | OpenTelemetry, serde_json |
 
 ## Installing telemetry: `init` and `Guard`
 
@@ -166,7 +166,7 @@ Print the line with `println!`, not through a log subscriber that prefixes it: C
 
 The pipelines call `join_trace` and `record_status` themselves.
 
-**Why it exists.** A span exported over HTTPS costs a network round trip on the request path, or a batch that must be flushed before the response, because Lambda freezes the sandbox as soon as the invocation returns, and a background exporter only runs again at the next invocation, if one comes. The agent sits inside the sandbox and forwards traces outside the invocation, so the function sends a local datagram without an HTTPS connection or an exporter batch to flush. UDP is best effort and does not confirm delivery to X-Ray. This is the transport the AWS Distro for OpenTelemetry Lambda layers use: a JSON header line, `T1S`, then base64 of an OTLP `ExportTraceServiceRequest`. Trace ids start with a timestamp, as X-Ray requires.
+**Why it exists.** A span exported over HTTPS costs a network round trip on the request path, or a batch that must be flushed before the response, because Lambda freezes the sandbox as soon as the invocation returns, and a background exporter only runs again at the next invocation, if one comes. The agent sits inside the sandbox and forwards traces outside the invocation, so the function sends a local datagram without an HTTPS connection or an exporter batch to flush. UDP is best effort and does not confirm delivery to X-Ray. The datagram is the X-Ray daemon's UDP protocol: a JSON header line, then one [X-Ray segment document](https://docs.aws.amazon.com/xray/latest/devguide/xray-api-segmentdocuments.html). The daemon forwards that document to `PutTraceSegments`, so the body must be valid X-Ray segment JSON, not OTLP. Trace ids start with a timestamp, as X-Ray requires.
 
 **How to use it.** Enable `otel` and call [`telemetry::init`](crate::telemetry::init); nothing else is needed. To combine traces with a subscriber of your own, build the provider directly. Here a local socket plays the agent:
 
@@ -182,7 +182,12 @@ provider.tracer("orders").start("load-order").end();
 
 let mut datagram = vec![0_u8; 65_535];
 let read = agent.recv(&mut datagram)?;
-assert!(datagram[..read].starts_with(b"{\"format\":\"json\",\"version\":1}\nT1S"));
+let payload = datagram[..read]
+    .strip_prefix(b"{\"format\":\"json\",\"version\":1}\n")
+    .expect("the X-Ray daemon UDP header");
+let segment: serde_json::Value = serde_json::from_slice(payload)?;
+assert_eq!(segment["name"].as_str(), Some("load-order"));
+assert!(segment["trace_id"].as_str().unwrap().starts_with("1-"));
 # Ok::<(), Box<dyn std::error::Error>>(())
 ```
 

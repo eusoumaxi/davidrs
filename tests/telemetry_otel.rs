@@ -1,9 +1,9 @@
 //! X-Ray traces through the public API, read the way the sandbox's X-Ray
-//! agent reads them: one UDP datagram per span, a JSON header line, `T1S`,
-//! then base64 of an OTLP `ExportTraceServiceRequest`.
+//! agent does: one UDP datagram per span, the daemon's JSON header line,
+//! then one X-Ray segment document as JSON.
 //!
-//! A local UDP socket plays the agent. The tests that read or set environment
-//! variables, or install the global subscriber, hold [`ENV`].
+//! A local UDP socket plays the agent. The tests that read or set
+//! environment variables, or install the global subscriber, hold [`ENV`].
 #![cfg(feature = "otel")]
 
 mod support;
@@ -13,16 +13,11 @@ use std::net::UdpSocket;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use base64::Engine as _;
 use davidrs::telemetry::logs::invocation_span;
 use davidrs::telemetry::{agent_endpoint, join_trace, record_status, tracer_provider};
 use davidrs::{Deadline, Invocation};
 use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
-use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
-use opentelemetry_proto::tonic::common::v1::KeyValue;
-use opentelemetry_proto::tonic::common::v1::any_value::Value;
-use opentelemetry_proto::tonic::trace::v1::span::SpanKind;
-use prost::Message as _;
+use serde_json::Value;
 use tracing::field::Field;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::Layer;
@@ -36,7 +31,9 @@ static ENV: Mutex<()> = Mutex::new(());
 const TRACE_HEADER: &str =
     "Root=1-5759e988-bd862e3fe1be46a994272793;Parent=53995c3f42cd8ad8;Sampled=1";
 
-const HEADER_LINE: &[u8] = b"{\"format\":\"json\",\"version\":1}\nT1S";
+/// The X-Ray daemon UDP header: a JSON object, then a newline, then the
+/// segment document the daemon forwards verbatim to `PutTraceSegments`.
+const HEADER_LINE: &[u8] = b"{\"format\":\"json\",\"version\":1}\n";
 
 fn agent() -> UdpSocket {
     let socket = UdpSocket::bind("127.0.0.1:0").expect("bind");
@@ -50,65 +47,98 @@ fn address(agent: &UdpSocket) -> String {
     agent.local_addr().expect("address").to_string()
 }
 
-/// Receives one datagram and decodes it as the agent does.
-fn receive(agent: &UdpSocket) -> ExportTraceServiceRequest {
+/// Receives one datagram and decodes it as the X-Ray daemon does: strip the
+/// header line, parse the rest as a segment document.
+fn receive(agent: &UdpSocket) -> Value {
     let mut buffer = vec![0_u8; 65_535];
     let read = agent.recv(&mut buffer).expect("a datagram");
     let payload = buffer[..read]
         .strip_prefix(HEADER_LINE)
-        .expect("the header line and T1S");
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(payload)
-        .expect("base64");
-    ExportTraceServiceRequest::decode(bytes.as_slice()).expect("OTLP protobuf")
+        .expect("the X-Ray daemon UDP header");
+    serde_json::from_slice(payload).expect("a JSON segment document")
 }
 
-fn attribute<'a>(attributes: &'a [KeyValue], key: &str) -> Option<&'a Value> {
-    attributes
-        .iter()
-        .find(|attribute| attribute.key == key)
-        .and_then(|attribute| attribute.value.as_ref()?.value.as_ref())
+/// Asserts `value` is a 16-character lowercase hex string, as an X-Ray
+/// segment or parent id must be.
+fn assert_id(value: &Value, what: &str) {
+    let id = value.as_str().expect(what);
+    assert_eq!(id.len(), 16, "{what} is 16 hex characters");
+    assert!(
+        id.chars().all(|c| c.is_ascii_hexdigit()),
+        "{what} `{id}` is hex"
+    );
 }
 
-fn string(value: &str) -> Value {
-    Value::StringValue(value.to_owned())
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-fn service_name(request: &ExportTraceServiceRequest) -> Option<&Value> {
-    let resource = request.resource_spans[0].resource.as_ref()?;
-    attribute(&resource.attributes, "service.name")
+/// Asserts `value` is an X-Ray trace id `1-<8 hex>-<24 hex>`.
+fn assert_trace_id(value: &Value) {
+    let trace_id = value.as_str().expect("trace_id");
+    let parts: Vec<&str> = trace_id.split('-').collect();
+    assert_eq!(parts.len(), 3, "X-Ray trace id has three parts: {trace_id}");
+    assert_eq!(parts[0], "1", "the version is 1");
+    assert_eq!(parts[1].len(), 8, "the timestamp is 8 hex characters");
+    assert_eq!(parts[2].len(), 24, "the random part is 24 hex characters");
+    assert!(
+        parts[1]
+            .chars()
+            .chain(parts[2].chars())
+            .all(|c| c.is_ascii_hexdigit()),
+        "the trace id is hex"
+    );
 }
 
 #[test]
-fn each_span_reaches_the_agent_as_one_otlp_datagram() {
+fn each_span_reaches_the_agent_as_one_xray_segment_datagram() {
     let agent = agent();
     let provider = tracer_provider(&address(&agent), "fallback").expect("provider");
     let mut span = provider.tracer("test").start("unit-of-work");
     span.set_attribute(opentelemetry::KeyValue::new("items", 3));
     span.end();
 
-    let request = receive(&agent);
-    let span = &request.resource_spans[0].scope_spans[0].spans[0];
-    assert_eq!(span.name, "unit-of-work");
-    assert_eq!(
-        attribute(&span.attributes, "items"),
-        Some(&Value::IntValue(3))
-    );
-    assert_eq!(span.trace_id.len(), 16);
+    let segment = receive(&agent);
+    assert_eq!(segment["name"].as_str(), Some("unit-of-work"));
+    assert_id(&segment["id"], "segment id");
+    assert_trace_id(&segment["trace_id"]);
+
     let seconds = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .expect("after 1970")
         .as_secs();
-    let stamped = u64::from(u32::from_be_bytes(
-        span.trace_id[..4].try_into().expect("four bytes"),
-    ));
+    let stamped = u32::from_str_radix(
+        segment["trace_id"]
+            .as_str()
+            .unwrap()
+            .split('-')
+            .nth(1)
+            .unwrap(),
+        16,
+    )
+    .map(u64::from)
+    .expect("hex epoch");
     assert!(
         seconds.abs_diff(stamped) < 60,
         "X-Ray trace ids start with the epoch second"
+    );
+
+    assert!(
+        segment.get("type").is_none(),
+        "a root span has no subsegment type"
+    );
+    assert!(
+        segment.get("parent_id").is_none(),
+        "a root span has no parent_id"
+    );
+
+    let start = segment["start_time"]
+        .as_f64()
+        .expect("start_time is a number");
+    let end = segment["end_time"].as_f64().expect("end_time is a number");
+    assert!(start <= end, "start_time is not after end_time");
+
+    assert_eq!(segment["metadata"]["otel"]["items"].as_i64(), Some(3));
+    assert_eq!(segment["service"]["name"].as_str(), Some("fallback"));
+    assert!(
+        segment.get("origin").is_none(),
+        "no Lambda environment: no origin"
     );
 }
 
@@ -124,25 +154,27 @@ fn the_service_name_is_otel_service_name_then_the_function_name_then_the_fallbac
 
     support::env::remove("OTEL_SERVICE_NAME");
     support::env::remove("AWS_LAMBDA_FUNCTION_NAME");
-    assert_eq!(
-        service_name(&traced("outside-lambda")),
-        Some(&string("fallback"))
+    let outside = traced("outside-lambda");
+    assert_eq!(outside["service"]["name"].as_str(), Some("fallback"));
+    assert!(
+        outside.get("origin").is_none(),
+        "no Lambda environment: no origin"
     );
 
     support::env::set("AWS_LAMBDA_FUNCTION_NAME", "orders-function");
     let in_lambda = traced("in-lambda");
-    assert_eq!(service_name(&in_lambda), Some(&string("orders-function")));
-    let resource = in_lambda.resource_spans[0]
-        .resource
-        .as_ref()
-        .expect("resource");
     assert_eq!(
-        attribute(&resource.attributes, "faas.name"),
-        Some(&string("orders-function"))
+        in_lambda["service"]["name"].as_str(),
+        Some("orders-function")
+    );
+    assert_eq!(
+        in_lambda["origin"].as_str(),
+        Some("AWS::Lambda::Function"),
+        "a Lambda resource sets the X-Ray origin"
     );
 
     support::env::set("OTEL_SERVICE_NAME", "orders");
-    assert_eq!(service_name(&traced("named")), Some(&string("orders")));
+    assert_eq!(traced("named")["service"]["name"].as_str(), Some("orders"));
 
     support::env::remove("OTEL_SERVICE_NAME");
     support::env::remove("AWS_LAMBDA_FUNCTION_NAME");
@@ -236,41 +268,47 @@ fn init_exports_invocation_spans_as_server_spans_of_the_lambda_trace() {
     let span = invocation_span("orders", &first);
     record_status(&span, 201);
     drop(span);
-    let request = receive(&agent);
-    let exported = &request.resource_spans[0].scope_spans[0].spans[0];
-    assert_eq!(exported.name, "lambda.invocation");
-    assert_eq!(exported.kind, SpanKind::Server as i32);
-    assert_eq!(hex(&exported.trace_id), "5759e988bd862e3fe1be46a994272793");
-    assert_eq!(hex(&exported.parent_span_id), "53995c3f42cd8ad8");
+    let segment = receive(&agent);
+    assert_eq!(segment["name"].as_str(), Some("lambda.invocation"));
+    assert_id(&segment["id"], "segment id");
     assert_eq!(
-        attribute(&exported.attributes, "faas.coldstart"),
-        Some(&Value::BoolValue(true))
+        segment["trace_id"].as_str(),
+        Some("1-5759e988-bd862e3fe1be46a994272793")
+    );
+    assert_eq!(segment["type"].as_str(), Some("subsegment"));
+    assert_eq!(segment["parent_id"].as_str(), Some("53995c3f42cd8ad8"));
+    assert_eq!(
+        segment["metadata"]["otel"]["faas.coldstart"].as_bool(),
+        Some(true)
     );
     assert_eq!(
-        attribute(&exported.attributes, "http.response.status_code"),
-        Some(&Value::IntValue(201))
+        segment["metadata"]["otel"]["http.response.status_code"].as_i64(),
+        Some(201)
     );
     assert_eq!(
-        attribute(&exported.attributes, "operation"),
-        Some(&string("orders"))
+        segment["metadata"]["otel"]["operation"].as_str(),
+        Some("orders")
     );
     assert_eq!(
-        attribute(&exported.attributes, "request_id"),
-        Some(&string("request-1"))
+        segment["metadata"]["otel"]["request_id"].as_str(),
+        Some("request-1")
     );
-    assert_eq!(service_name(&request), Some(&string("traces-test")));
+    assert_eq!(segment["service"]["name"].as_str(), Some("traces-test"));
 
     drop(invocation_span(
         "orders",
         &Invocation::new("request-2", deadline),
     ));
-    let request = receive(&agent);
-    let exported = &request.resource_spans[0].scope_spans[0].spans[0];
-    assert_eq!(
-        attribute(&exported.attributes, "faas.coldstart"),
-        Some(&Value::BoolValue(false))
+    let second = receive(&agent);
+    assert!(second.get("type").is_none(), "a root span is a segment");
+    assert!(
+        second.get("parent_id").is_none(),
+        "a root span has no parent_id"
     );
-    assert!(exported.parent_span_id.is_empty());
+    assert_eq!(
+        second["metadata"]["otel"]["faas.coldstart"].as_bool(),
+        Some(false)
+    );
 
     assert!(davidrs::telemetry::init("traces-test").is_err());
 

@@ -7,6 +7,14 @@ version may change the public API, and its entry says how.
 
 ## [Unreleased]
 
+### Fixed
+
+- With `otel`, finished spans are now exported to the X-Ray daemon as X-Ray
+  segment (subsegment) JSON documents, so the daemon can forward them to
+  `PutTraceSegments`. Previously each span left as a `T1S`-prefixed,
+  base64-encoded OTLP datagram, which the daemon forwarded verbatim and the
+  X-Ray service rejected as unprocessed, so no traces were ever ingested.
+
 ### Changed
 
 - The README now starts with installation, a complete HTTP function and
