@@ -222,6 +222,31 @@ fn source_ip_reads_the_address_a_load_balancer_appended() {
     assert_eq!(Request::new(&native).source_ip(), "192.0.2.44");
 }
 
+/// With multi-value headers, each `X-Forwarded-For` line a client sends is
+/// its own value, and the load balancer's address is the last of them, so
+/// the earlier lines, which a client chooses, never become the address.
+#[cfg(feature = "alb")]
+#[test]
+fn source_ip_reads_the_last_of_several_forwarded_lines() {
+    let event = serde_json::json!({
+        "requestContext": {
+            "elb": {
+                "targetGroupArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/orders/0123456789abcdef"
+            }
+        },
+        "httpMethod": "GET",
+        "path": "/orders",
+        "multiValueHeaders": {
+            "host": ["example.com"],
+            "x-forwarded-for": ["198.51.100.7", "192.0.2.44, 198.51.100.8", "203.0.113.9"]
+        },
+        "body": "",
+        "isBase64Encoded": false
+    });
+    let native = lambda_http::request::from_str(&event.to_string()).expect("an ALB event");
+    assert_eq!(Request::new(&native).source_ip(), "203.0.113.9");
+}
+
 #[test]
 fn form_deserializes_a_urlencoded_body() {
     #[derive(Debug, Deserialize)]
