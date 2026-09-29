@@ -294,6 +294,31 @@ async fn cancelled_refreshes_also_observe_the_failure_cooldown() {
     assert_eq!(server.hits("/jwks"), 1);
 }
 
+/// A miss that arrives while another refresh is downloading waits for it
+/// and uses its keys, rather than being refused as if it had failed.
+#[tokio::test]
+async fn a_miss_during_a_refresh_waits_for_it_instead_of_failing() {
+    let jwks = Jwks::serving(vec![jwk("k1")]).await;
+    let verifier = Arc::new(Verifier::deferred(http(), jwks.config()));
+    let first = tokio::spawn({
+        let verifier = Arc::clone(&verifier);
+        async move { verifier.verify(&valid("k1")).await }
+    });
+    let second = tokio::spawn({
+        let verifier = Arc::clone(&verifier);
+        async move { verifier.verify(&valid("k1")).await }
+    });
+    first
+        .await
+        .expect("joined")
+        .expect("the first token verifies");
+    second
+        .await
+        .expect("joined")
+        .expect("the second token verifies");
+    assert_eq!(jwks.fetches(), 1);
+}
+
 #[tokio::test]
 async fn jwks_transport_errors_do_not_disclose_the_endpoint_url() {
     let config = VerifierConfig::new(ISSUER, "http://127.0.0.1:1/jwks?key=private-value");

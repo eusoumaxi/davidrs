@@ -359,6 +359,18 @@ async fn a_body_that_is_not_one_request_is_an_invalid_request() {
     }
 }
 
+/// MCP forbids a `null` request id, and only a message without an `id` is a
+/// notification, so the message is refused instead of accepted unanswered.
+#[tokio::test]
+async fn an_id_of_null_is_an_invalid_request_not_a_notification() {
+    let mut message = body_of("ping", json!({}));
+    message["id"] = Value::Null;
+    let (status, _, body) = send(&server(), post(mirrored("ping", None), &message)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], -32600);
+    assert!(body.get("id").is_none());
+}
+
 /// The header names the revision, but the metadata the body must carry is
 /// incomplete.
 #[tokio::test]

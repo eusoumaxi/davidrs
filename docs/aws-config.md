@@ -2,7 +2,7 @@
 
 Enable `aws`, or enable `dynamo`, `eventbridge`, `secrets` or `queue-visibility`, which enable it for you. Call [`sdk_config`](crate::aws::sdk_config) once in `main`, before the loop, and pass the result to every `Client::new`. A missing `AWS_REGION` or access key fails that call, and the error names the variable, instead of failing the first request with a signing error.
 
-[`aws::sdk_config`](crate::aws::sdk_config) reads only what Lambda puts in the environment: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` when present, and `AWS_REGION`. It does not run the `aws-config` credential chain (profiles, SSO, IMDS, web identity). The environment provider normally resolves Lambda credentials first; the remaining providers are not compiled into this helper. The HTTP client uses rustls, and [`Trust`](crate::aws::Trust) chooses which root certificates it accepts. `sdk_config` itself performs no network I/O.
+[`aws::sdk_config`](crate::aws::sdk_config) reads only what Lambda puts in the environment: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` when present, and `AWS_REGION`. It does not run the `aws-config` credential chain (profiles, SSO, IMDS, web identity). The environment provider normally resolves Lambda credentials first; the remaining providers are not compiled into this helper. Like that provider, it reads the credentials again each time the SDK resolves them rather than keeping the first read. The HTTP client uses rustls, and [`Trust`](crate::aws::Trust) chooses which root certificates it accepts. `sdk_config` itself performs no network I/O.
 
 ## Why it exists
 
@@ -54,7 +54,6 @@ To point a client at a local endpoint, such as DynamoDB Local, override it on th
 ## What it does not do
 
 - **No other credential sources.** No profiles, SSO, instance metadata or role assumption. Outside Lambda, export the variables.
-- **No refresh.** The credentials are read once, when `sdk_config` runs.
 - **No other settings from the environment.** Endpoint overrides, retry modes and timeouts are not read from variables; set them on the service configuration.
 - **No clients.** Which services a function calls is its own decision.
 

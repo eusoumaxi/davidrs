@@ -191,6 +191,25 @@ fn plain_errors_carry_the_failure_headers() {
 }
 
 #[test]
+fn a_failure_header_named_twice_keeps_both_values() {
+    let failure = Failure::new(StatusCode::UNAUTHORIZED, "ERROR_SIGNED_OUT", "Signed out")
+        .with_header("Set-Cookie", "session=; Max-Age=0")
+        .with_header("Set-Cookie", "tenant=; Max-Age=0");
+    let response = PlainErrors.render(&failure);
+    let cookies: Vec<_> = response.headers().get_all("set-cookie").iter().collect();
+    assert_eq!(cookies, ["session=; Max-Age=0", "tenant=; Max-Age=0"]);
+}
+
+#[test]
+fn a_failure_header_replaces_the_one_the_renderer_sets() {
+    let failure = Failure::new(StatusCode::NOT_ACCEPTABLE, "ERROR_FORMAT", "Unsupported")
+        .with_header("Content-Type", "application/vnd.example+json");
+    let response = PlainErrors.render(&failure);
+    let types: Vec<_> = response.headers().get_all("content-type").iter().collect();
+    assert_eq!(types, ["application/vnd.example+json"]);
+}
+
+#[test]
 fn literal_builds_a_response_from_a_serialized_body() {
     let response = literal(StatusCode::CONFLICT, "text/plain", "closed".to_owned());
     assert_eq!(response.status(), StatusCode::CONFLICT);

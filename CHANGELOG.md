@@ -14,6 +14,29 @@ version may change the public API, and its entry says how.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
 
+### Fixed
+
+- A token whose key is being fetched by a concurrent JWKS refresh waits for
+  that refresh instead of being refused with `UnknownKey`.
+- A `fields` exclusion outside what the request keeps no longer leaves an
+  empty object in the response or marks its ancestors as wanted.
+- A header name repeated on a `Failure` or by an `Admission`, such as
+  `set-cookie`, keeps every value on the response.
+- `sdk_config` reads the credentials again each time the SDK resolves them,
+  so a value that changes while the function is warm is used.
+- OpenAPI tools send a `null` field of a flattened JSON body as `null`
+  instead of dropping it, so a JSON Merge Patch can clear a field.
+- `Producer::fail` ends the stream: nothing sent afterwards, and no later
+  deadline error, follows the failure, and the producer is cancelled.
+- An MCP message with `"id": null` is refused with `-32600`, since MCP
+  forbids a null request id; it was accepted as a notification and never
+  answered.
+- Keywords beside a `$ref` in an OpenAPI document apply together with its
+  target in the published tool schemas: a constraint the target also sets
+  goes under `allOf`, and `properties` and `required` are merged.
+- `Invocation::invoked_arn` is `None` for a value that is not an ARN, such
+  as the `function-arn` placeholder `cargo lambda watch` sends.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.
