@@ -159,7 +159,10 @@ impl<'a> Request<'a> {
     /// With the `alb` feature, an Application Load Balancer request, whose
     /// context has no address, gives the last address of `X-Forwarded-For`:
     /// the one the load balancer appends in its default `append` mode. With
-    /// the `preserve` or `remove` modes that address is not the caller's, so
+    /// multi-value headers the header can arrive as several values, one per
+    /// line the client sent, and the address is the last one of the last
+    /// value, never an earlier line a client could choose. With the
+    /// `preserve` or `remove` modes that address is not the caller's, so
     /// keep `append` wherever this address is a rate-limit key.
     #[must_use]
     pub fn source_ip(&self) -> String {
@@ -169,7 +172,11 @@ impl<'a> Request<'a> {
             Some(RequestContext::ApiGatewayV1(gateway)) => gateway.identity.source_ip.as_deref(),
             #[cfg(feature = "alb")]
             Some(RequestContext::Alb(_)) => self
-                .header("x-forwarded-for")
+                .headers()
+                .get_all("x-forwarded-for")
+                .iter()
+                .next_back()
+                .and_then(|forwarded| forwarded.to_str().ok())
                 .and_then(|forwarded| forwarded.rsplit(',').next())
                 .map(str::trim),
             _ => None,

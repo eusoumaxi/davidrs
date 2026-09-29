@@ -179,7 +179,7 @@ are on [GitHub Releases](https://github.com/eusoumaxi/davidrs/releases).
 
 ```bash
 scripts/check.sh                      # everything CI runs
-git config core.hooksPath .githooks   # check branch names and commit messages locally
+git config core.hooksPath .githooks   # check commit messages locally
 ```
 
 ## Licence

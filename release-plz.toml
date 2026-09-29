@@ -1,3 +1,13 @@
 [workspace]
 dependencies_update = false
 semver_check = true
+
+# The changelog is written by hand under `## [Unreleased]`. On a release,
+# release-plz inserts only the version heading below `## [Unreleased]`, so the
+# entries written there become that version's section. The heading must match
+# what `scripts/check.sh release` requires: `## [X.Y.Z] - YYYY-MM-DD`.
+[changelog]
+body = """
+## [{{ version }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+"""
+trim = false

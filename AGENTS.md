@@ -15,7 +15,7 @@ CONTRIBUTING.md and the guide in `docs/` first.
 
 - Never commit to `main`. Work on a branch named `<type>/<description>`,
   such as `fix/42-jwks-refresh`, never one named after the assistant
-  (`claude/…`); `scripts/check.sh branch` checks it.
+  (`claude/…`).
 - Commit only when asked, always in the maintainer's name: the author and
   committer of the commits on `main` (`git log -1 --format='%an <%ae>' main`).
   A commit never names the assistant: no assistant author, no

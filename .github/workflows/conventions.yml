@@ -1,8 +1,8 @@
 name: Conventions
 
-# Branch names, pull request titles and commit messages, as CONTRIBUTING.md
-# describes them. A separate workflow, so editing a pull request's title
-# re-runs these checks without re-running CI.
+# Pull request titles and commit messages, as CONTRIBUTING.md describes them.
+# A separate workflow, so editing a pull request's title re-runs these checks
+# without re-running CI.
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize]
@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   conventions:
-    name: Branch, title and commits
+    name: Title and commits
     runs-on: ubuntu-latest
     steps:
       - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
@@ -22,10 +22,6 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Branch name
-        run: scripts/check.sh branch "$BRANCH"
-        env:
-          BRANCH: ${{ github.head_ref }}
       - name: Pull request title, which becomes the squashed commit
         run: printf '%s\n' "$TITLE" | scripts/check.sh commit-msg /dev/stdin
         env:

@@ -7,39 +7,14 @@ version may change the public API, and its entry says how.
 
 ## [Unreleased]
 
-### Fixed
-
-- A scheme name sent alone in `Authorization`, such as `Basic` or `NTLM`
-  with no credentials, leaves the request anonymous on a route that
-  verifies bearer tokens, instead of being refused with
-  `ERROR_INVALID_TOKEN`.
-- An OpenAPI call no longer emits two `Authorization` field lines when both
-  `OpenApi::forward_caller_token` and a configured `authorization` header are
-  set: the configured header wins, matching the precedence already given to
-  configured headers over argument-derived ones (`Authorization` is a
-  singleton field, RFC 9110 §11.6.2).
-- The HTTP pipeline's 4xx failure log records `kind` (the step that failed)
-  instead of the HTTP status, matching the 5xx branch and the docstring, so
-  two same-code 4xx failures from different steps stay distinguishable in
-  DEBUG logs.
-
-## [0.1.1](https://github.com/eusoumaxi/davidrs/compare/v0.1.0...v0.1.1) - 2026-09-29
-
-### Fixed
-
-- resolve open bug reports #4 through #12
-
-### Other
-
-- *(mcp)* keep every value of a repeated header on a refusal
-- improve repository overview and getting started
-
 ### Changed
 
 - The README now starts with installation, a complete HTTP function and
   direct links to the guide, examples, agent skill and security reporting.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
+- The agent skill's references name `VerifierConfig::with_required_claim`
+  and say that an `or_else` tenant is checked against membership.
 
 ### Fixed
 
@@ -63,6 +38,20 @@ version may change the public API, and its entry says how.
   goes under `allOf`, and `properties` and `required` are merged.
 - `Invocation::invoked_arn` is `None` for a value that is not an ARN, such
   as the `function-arn` placeholder `cargo lambda watch` sends.
+- An OpenAPI call sends one `Authorization` header: when an `authorization`
+  header is configured with `OpenApi::header`, it replaces the caller's
+  token that `OpenApi::forward_caller_token` would send.
+- The debug log line of a refused (4xx) request records the step that
+  refused it (`kind`) instead of the HTTP status, so two refusals with the
+  same code from different steps can be told apart.
+- A scheme name sent alone in `Authorization`, such as `Basic` or `NTLM`
+  with no credentials, leaves the request anonymous on a route that
+  verifies bearer tokens, instead of being refused with
+  `ERROR_INVALID_TOKEN`.
+- On an Application Load Balancer with multi-value headers, `source_ip`
+  reads the last `X-Forwarded-For` value, the one the load balancer
+  appends, instead of the first line, which a client can choose to pick
+  its own rate-limit key.
 
 ## [0.1.0] - 2026-09-27
 

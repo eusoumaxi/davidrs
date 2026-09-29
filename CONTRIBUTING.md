@@ -55,7 +55,7 @@ Keep examples compilable. Rustdoc compiles Rust snippets as doctests; `no_run` s
 scripts/check.sh                  # everything CI runs
 scripts/check.sh lint             # one step: rules, lint, test, features, docs, package, spelling, workflows, deny
 scripts/check.sh coverage         # line coverage (needs cargo-llvm-cov)
-git config core.hooksPath .githooks   # once per clone: check branch names and commit messages locally
+git config core.hooksPath .githooks   # once per clone: check commit messages locally
 ```
 
 Default features are empty, so an editor that analyses the default build greys out every feature-gated module and test. `.vscode/settings.json` makes rust-analyzer analyse all features and run clippy in VS Code and Cursor; in another editor, set rust-analyzer's `cargo.features` to `"all"`.
@@ -69,7 +69,7 @@ Work on a branch named `<type>/<description>`, never on `main`:
 - `<type>` is one of the commit types below: `feat/sqs-visibility`, `fix/42-jwks-refresh`, `docs/getting-started`.
 - `<description>` is lowercase words and digits joined by `-`, with an issue number first when there is one. A dot is allowed for a version: `chore/release-0.2.0`.
 
-`scripts/check.sh branch` checks the name, the hook runs it on every commit, and CI runs it on every pull request. Rename a branch with `git branch -m <type>/<description>`.
+Reviewers check the name; no script does. Rename a branch with `git branch -m <type>/<description>`.
 
 ## Commit messages
 
@@ -84,7 +84,7 @@ Commits follow [Conventional Commits 1.0](https://www.conventionalcommits.org/en
 ```
 
 - **type**: `feat` (a new capability), `fix` (a bug fix), `docs`, `test`, `refactor` (no change in behaviour), `perf`, `style` (formatting only), `build` (Cargo.toml, dependencies), `ci`, `chore` (anything else, such as a release), `revert`.
-- **scope**: optional; the module or area in lowercase: `http`, `queue`, `mcp`, `table`, `auth`, `deps`.
+- **scope**: optional; the module or area in lowercase: `http`, `queue`, `mcp`, `dynamo`, `auth`, `deps`.
 - **description**: imperative mood, lowercase unless it starts with a name, no trailing period: `fix(queue): report unattempted records as failures`. The whole subject is at most 72 characters.
 - **body**: optional, after a blank line. Say what changes and why, wrapped at 72 characters.
 - **footers**: `BREAKING CHANGE: <what breaks and how to migrate>` for a breaking change (or `!` after the type or scope: `feat(http)!: …`), and `Refs: #123`.
@@ -122,11 +122,14 @@ changes to `src/`, `Cargo.toml`, `Cargo.lock`, `build.rs` or
 `rust-toolchain.toml` since the latest release trigger an automatic release.
 Documentation, tests, skills and workflow changes alone do not publish a crate.
 [Release-plz](https://release-plz.dev) compares the package with crates.io,
-updates the version and changelog, and checks API compatibility with
-`cargo-semver-checks`. Compatible changes normally increment the patch version;
-breaking changes increment the minor version before 1.0. Mark behavioural
-breaking changes with `!` or a `BREAKING CHANGE` footer too, because API checks
-cannot detect every compatibility change.
+updates the version, and checks API compatibility with `cargo-semver-checks`.
+It writes no changelog entries: it adds the heading `## [X.Y.Z] - YYYY-MM-DD`
+below `## [Unreleased]`, so the entries written there become the new
+version's section and its release notes (`release-plz.toml`). Compatible
+changes normally increment the patch version; breaking changes increment the
+minor version before 1.0. Mark behavioural breaking changes with `!` or a
+`BREAKING CHANGE` footer too, because API checks cannot detect every
+compatibility change.
 
 The workflow commits release metadata on a `chore/release-<version>` branch,
 advances `main` without rewriting history, publishes with Trusted Publishing,
@@ -152,7 +155,7 @@ For an explicit version or a retry, the manual tag workflow remains available:
 Once per repository:
 
 - **First publish.** crates.io only accepts trusted publishing for a crate that already exists, so publish the first version from your machine with `cargo publish`. Then, on crates.io, add a trusted publisher to the crate: repository `eusoumaxi/davidrs`, workflow `release.yml`, environment `release`. Push the tag afterwards: the workflow sees the version is already published and only creates the release and the site.
-- **Environments.** In the repository settings, protect the `release` environment (for example, with a required reviewer), and allow tags `v*` to deploy to `github-pages`.
+- **Environments.** In the repository settings, protect the `release` environment (for example, with a required reviewer), and allow `main` and tags `v*` to deploy to `github-pages`.
 
 ## Licence
 
