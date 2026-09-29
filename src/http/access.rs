@@ -827,6 +827,23 @@ fn bearer_token(value: &str) -> Option<&str> {
         }
         Some(_) => None,
         None if value.eq_ignore_ascii_case("bearer") => None,
+        None if is_known_auth_scheme(value) => None,
         None => Some(value).filter(|token| !token.is_empty()),
     }
+}
+
+/// The HTTP authentication scheme names a stray `Authorization` header is
+/// realistically emitted as: `Basic`, `Digest`, `Negotiate` (NTLM/SPNEGO)
+/// and `Signed` (the OAuth custom-scheme family used by this codebase).
+const KNOWN_AUTH_SCHEMES: [&str; 4] = ["basic", "digest", "negotiate", "signed"];
+
+/// Whether `value` is a known HTTP authentication scheme name with no
+/// credentials, as in `Authorization: Basic`. Such a bareword is not a caller
+/// token: a genuine bare token carries a compact JWT, whose `.` parts would
+/// be lost to a scheme-name-only value. Returning `None` leaves the request
+/// anonymous, matching the `Bearer`-with-no-token arm above.
+fn is_known_auth_scheme(value: &str) -> bool {
+    KNOWN_AUTH_SCHEMES
+        .iter()
+        .any(|scheme| value.eq_ignore_ascii_case(scheme))
 }

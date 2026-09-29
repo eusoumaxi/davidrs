@@ -14,6 +14,12 @@ version may change the public API, and its entry says how.
 - The introduction describes runtime boundaries without unmeasured latency
   or cost claims.
 
+### Fixed
+
+- A scheme-name-only `Authorization` header (such as `Basic` with no
+  credentials) leaves the request anonymous on a route that verifies bearer
+  tokens, instead of being refused with `ERROR_INVALID_TOKEN`.
+
 ## [0.1.0] - 2026-09-27
 
 The first public release.
