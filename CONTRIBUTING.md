@@ -84,7 +84,7 @@ Commits follow [Conventional Commits 1.0](https://www.conventionalcommits.org/en
 ```
 
 - **type**: `feat` (a new capability), `fix` (a bug fix), `docs`, `test`, `refactor` (no change in behaviour), `perf`, `style` (formatting only), `build` (Cargo.toml, dependencies), `ci`, `chore` (anything else, such as a release), `revert`.
-- **scope**: optional; the module or area in lowercase: `http`, `queue`, `mcp`, `table`, `auth`, `deps`.
+- **scope**: optional; the module or area in lowercase: `http`, `queue`, `mcp`, `dynamo`, `auth`, `deps`.
 - **description**: imperative mood, lowercase unless it starts with a name, no trailing period: `fix(queue): report unattempted records as failures`. The whole subject is at most 72 characters.
 - **body**: optional, after a blank line. Say what changes and why, wrapped at 72 characters.
 - **footers**: `BREAKING CHANGE: <what breaks and how to migrate>` for a breaking change (or `!` after the type or scope: `feat(http)!: …`), and `Refs: #123`.
