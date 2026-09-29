@@ -607,6 +607,39 @@ async fn the_admission_counts_every_request_and_its_refusal_keeps_its_headers() 
     assert!(answered.contains_key("ratelimit"));
 }
 
+/// Refuses every request and clears two cookies, the way a sign-out behind a
+/// rate limit would.
+struct SignOut;
+
+impl Admission for SignOut {
+    async fn check(
+        &self,
+        _: &Request<'_>,
+        _: &Invocation,
+    ) -> Result<Vec<(String, String)>, Failure> {
+        Err(Failure::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "ERROR_RATE_LIMITED",
+            "Slow down",
+        )
+        .with_header("set-cookie", "session=; Max-Age=0")
+        .with_header("set-cookie", "tenant=; Max-Age=0"))
+    }
+}
+
+#[tokio::test]
+async fn a_refusal_keeps_every_value_of_a_repeated_header() {
+    let server = server().admission(SignOut);
+    let (status, answered, _) = send(&server, request("ping", json!({}))).await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    let cookies: Vec<&str> = answered
+        .get_all("set-cookie")
+        .iter()
+        .map(|value| value.to_str().expect("a text header"))
+        .collect();
+    assert_eq!(cookies, ["session=; Max-Age=0", "tenant=; Max-Age=0"]);
+}
+
 #[tokio::test]
 async fn any_method_other_than_post_is_a_405_naming_post() {
     for method in ["GET", "DELETE", "PUT"] {
