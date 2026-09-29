@@ -5,7 +5,6 @@
 #   scripts/check.sh <step>              one step: rules lint test features msrv docs
 #                                        site package spelling workflows deny coverage
 #   scripts/check.sh feature <name>      one feature alone
-#   scripts/check.sh branch [name]       a branch name (default: the current branch)
 #   scripts/check.sh commit-msg <file>   a commit message, as the commit-msg hook does
 #   scripts/check.sh commits <range>     every commit message in a range, merges excluded
 #   scripts/check.sh release <tag>       a release tag against Cargo.toml, CHANGELOG.md and main
@@ -18,7 +17,7 @@ cd "$(dirname "$0")/.."
 # Line coverage (percent) the whole crate must keep.
 COVERAGE_FLOOR="${COVERAGE_FLOOR:-98}"
 
-# The Conventional Commits types. A branch name starts with one of them too.
+# The Conventional Commits types.
 TYPES='build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test'
 
 say() { printf '\n==> %s\n' "$*"; }
@@ -134,26 +133,6 @@ coverage() {
   fi
 }
 
-# <type>/<description>: lowercase words joined by `-` (dots allowed, for a
-# version). Dependabot's branches and the branches GitHub's revert
-# button creates are accepted as they are. A detached HEAD (a rebase, a
-# bisect) has no name and passes.
-branch() {
-  local LC_ALL=C name
-  name=${1:-$(git symbolic-ref --quiet --short HEAD || true)}
-  local conventional="^($TYPES)/[a-z0-9]+([.-][a-z0-9]+)*$"
-  if [[ -z $name || $name == dependabot/* || $name =~ ^revert-[0-9]+- ]]; then
-    return 0
-  fi
-  if [[ ! $name =~ $conventional ]]; then
-    fail "branch name '$name' does not follow <type>/<description>" \
-      "  type: ${TYPES//|/, }" \
-      "  description: lowercase words joined by '-', e.g. feat/sqs-visibility or fix/42-jwks-refresh" \
-      "  rename it with: git branch -m <type>/<description>" \
-      "  see CONTRIBUTING.md, \"Branches\""
-  fi
-}
-
 # Conventional Commits: `<type>(<scope>)!: <description>`, the scope and the
 # `!` optional, at most 72 characters without a trailing period, and a blank
 # line before any body. Git's own merge, revert, fixup and squash subjects are
@@ -251,7 +230,6 @@ case "$1" in
   features) each_feature ;;
   feature) feature "${2:?a feature name}" ;;
   list-features) features ;;
-  branch) branch "${2:-}" ;;
   commit-msg) commit_msg "${2:?a commit message file}" ;;
   commits) commits "${2:?a revision range, such as origin/main..HEAD}" ;;
   release) release "${2:?a tag, such as v0.1.0}" ;;

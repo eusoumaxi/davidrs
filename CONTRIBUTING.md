@@ -55,7 +55,7 @@ Keep examples compilable. Rustdoc compiles Rust snippets as doctests; `no_run` s
 scripts/check.sh                  # everything CI runs
 scripts/check.sh lint             # one step: rules, lint, test, features, docs, package, spelling, workflows, deny
 scripts/check.sh coverage         # line coverage (needs cargo-llvm-cov)
-git config core.hooksPath .githooks   # once per clone: check branch names and commit messages locally
+git config core.hooksPath .githooks   # once per clone: check commit messages locally
 ```
 
 Default features are empty, so an editor that analyses the default build greys out every feature-gated module and test. `.vscode/settings.json` makes rust-analyzer analyse all features and run clippy in VS Code and Cursor; in another editor, set rust-analyzer's `cargo.features` to `"all"`.
@@ -69,7 +69,7 @@ Work on a branch named `<type>/<description>`, never on `main`:
 - `<type>` is one of the commit types below: `feat/sqs-visibility`, `fix/42-jwks-refresh`, `docs/getting-started`.
 - `<description>` is lowercase words and digits joined by `-`, with an issue number first when there is one. A dot is allowed for a version: `chore/release-0.2.0`.
 
-`scripts/check.sh branch` checks the name, the hook runs it on every commit, and CI runs it on every pull request. Rename a branch with `git branch -m <type>/<description>`.
+Reviewers check the name; no script does. Rename a branch with `git branch -m <type>/<description>`.
 
 ## Commit messages
 

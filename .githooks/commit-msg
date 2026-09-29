@@ -1,4 +1,4 @@
 #!/bin/sh
-# Checks the branch name and the commit message before Git records a commit.
+# Checks the commit message before Git records a commit.
 # Enable it once per clone: git config core.hooksPath .githooks
-scripts/check.sh branch && exec scripts/check.sh commit-msg "$1"
+exec scripts/check.sh commit-msg "$1"
